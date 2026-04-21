@@ -1,0 +1,9 @@
+# URL: https://sherpahimalaya.genesiswtech.com/our-team/
+
+Executive leadership
+Mingma Chhiri Sherpa
+Founder and DirectorMingma Chhiri Sherpa, the visionary Founder and Director of Sherpa Himalaya Treks and Expedition, is a living embodiment of resilience, passion, and visionary leadership. Born in the serene and rugged landscapes of Solukhumbu, Mingma’s journey from a humble mountain...
+Ang Sona Sherpa
+Chief Executive OfficerAng Sona Sherpa was born in the breathtaking region of Solukhumbu, nestled in the lap of the Himalayas. Growing up in a traditional Sherpa family, her early life was deeply influenced by the world of trekking and mountaineering. From...
+Doma Sherpa
+Operation ManagerDoma has been an indispensable part of Sherpa Himalaya Treks and Expedition, embodying the saying, “Behind every successful man is a woman making things work.” As a steadfast pillar of support to Mingma in both his personal and professional...
