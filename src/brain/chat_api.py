@@ -114,6 +114,14 @@ def answer(query, top_k: int = 8):
 
     # Otherwise perform retrieval + Groq LLM
     results = retrieve(query, top_k=top_k)
+    if not results:
+        # No relevant context found — return strict fallback
+        fallback = (
+            "Namaste. I'm sorry, but I don't have information on that specific topic in our records. "
+            "Please contact our team at info@sherpahimalaya.com for more details."
+        )
+        return fallback
+
     context = "\n\n".join([r.get("text", "") for r in results])
 
     messages = [
