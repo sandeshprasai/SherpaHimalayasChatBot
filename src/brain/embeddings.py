@@ -31,11 +31,27 @@ def get_embedding_model(prefer_groq: bool = True):
             def __init__(self, client, model):
                 self.client = client
                 self.model = model
+                # prepare a HF fallback but do not set globally
+                self._hf = None
+
+            def _ensure_hf(self):
+                if self._hf is None:
+                    try:
+                        self._hf = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+                    except Exception:
+                        self._hf = None
 
             def embed_query(self, text: str):
-                # Groq client: client.embeddings.create(model=..., input=...)
-                resp = self.client.embeddings.create(model=self.model, input=text)
-                return resp.data[0].embedding
+                # Try Groq embeddings first; on failure fall back to HF
+                try:
+                    resp = self.client.embeddings.create(model=self.model, input=text)
+                    return resp.data[0].embedding
+                except Exception as e:
+                    # fallback
+                    self._ensure_hf()
+                    if self._hf is not None:
+                        return self._hf.embed_query(text)
+                    raise
 
             def embed_documents(self, documents):
                 # Accept list[str] or list[dict]/Document-like
@@ -46,8 +62,15 @@ def get_embedding_model(prefer_groq: bool = True):
                     else:
                         # Document objects from llama_index have 'text' attribute
                         inputs.append(getattr(d, "text", str(d)))
-                resp = self.client.embeddings.create(model=self.model, input=inputs)
-                return [item.embedding for item in resp.data]
+                try:
+                    resp = self.client.embeddings.create(model=self.model, input=inputs)
+                    return [item.embedding for item in resp.data]
+                except Exception:
+                    # fallback to HF
+                    self._ensure_hf()
+                    if self._hf is not None:
+                        return self._hf.embed_documents(inputs)
+                    raise
 
         embed_model = GroqEmbeddingWrapper(client, model_name)
         # Do not set Settings.embed_model because LlamaIndex expects a BaseEmbedding instance.
