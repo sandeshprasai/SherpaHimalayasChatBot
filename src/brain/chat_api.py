@@ -22,11 +22,44 @@ except Exception:
     MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
-def answer(query, top_k: int = 5):
+def answer(query, top_k: int = 8):
     if not GROQ_AVAILABLE:
         raise RuntimeError("Groq client is not installed or not available in environment.")
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+    # Quick aggregation for comparative queries
+    qlow = query.lower()
+    try:
+        from src.brain import aggregator
+    except Exception:
+        aggregator = None
+
+    if aggregator:
+        if any(k in qlow for k in ['shortest', 'shorter', 'shortest trek']):
+            r = aggregator.shortest_trek()
+            if r:
+                title = r.get('metadata', {}).get('title') or r.get('text','')[:80]
+                days = r.get('metadata', {}).get('duration_days')
+                return f"{title} — {days} days"
+        if any(k in qlow for k in ['longest', 'longer', 'longest trek']):
+            r = aggregator.longest_trek()
+            if r:
+                title = r.get('metadata', {}).get('title') or r.get('text','')[:80]
+                days = r.get('metadata', {}).get('duration_days')
+                return f"{title} — {days} days"
+        if any(k in qlow for k in ['highest altitude', 'highest', 'highest peak', 'highest altitude trek']):
+            r = aggregator.highest_altitude()
+            if r:
+                title = r.get('metadata', {}).get('title') or r.get('text','')[:80]
+                alt = r.get('metadata', {}).get('max_altitude_m')
+                return f"{title} — {alt} meters"
+        if any(k in qlow for k in ['easiest', 'easy', 'beginner']):
+            r = aggregator.easiest_trek()
+            if r:
+                title = r.get('metadata', {}).get('title') or r.get('text','')[:80]
+                return f"{title} — difficulty: {r.get('metadata', {}).get('difficulty')}"
+
+    # Otherwise perform retrieval + Groq LLM
     results = retrieve(query, top_k=top_k)
     context = "\n\n".join([r.get("text", "") for r in results])
 

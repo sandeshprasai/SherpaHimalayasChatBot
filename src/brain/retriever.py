@@ -3,7 +3,7 @@ import json
 import numpy as np
 from dotenv import load_dotenv
 
-from src.data_pipeline.loader import load_json_docs
+from src.data_pipeline.loader_v2 import load_docs
 from src.brain.embeddings import get_embedding_model
 
 # Optional: use faiss when available
@@ -15,7 +15,7 @@ except Exception:
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(base_path, "../../"))
-DATA_DIR = os.path.join(project_root, "data/rag_ready")
+DATA_DIR = os.path.join(project_root, "data/cleaned_separated")
 VECTOR_DIR = os.path.join(project_root, "data/vector_db")
 FAISS_PATH = os.path.join(VECTOR_DIR, "faiss.index")
 DOCSTORE_PATH = os.path.join(VECTOR_DIR, "docstore.json")
@@ -27,9 +27,9 @@ def build_index_if_missing():
     os.makedirs(VECTOR_DIR, exist_ok=True)
     if FAISS_AVAILABLE and not os.path.exists(FAISS_PATH):
         print("Building FAISS index...")
-        docs = load_json_docs(DATA_DIR)
+        docs = load_docs(DATA_DIR)
         if not docs:
-            raise RuntimeError("No documents found to index in data/rag_ready")
+            raise RuntimeError("No documents found to index in data/cleaned_separated")
 
         embed_model = get_embedding_model()
         # get text list

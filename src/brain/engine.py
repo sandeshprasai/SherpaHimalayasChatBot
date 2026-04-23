@@ -96,76 +96,23 @@ def get_chat_engine(index):
 
 
 # ==============================
-# MAIN LOOP
+# MAIN LOOP (FAISS + Groq)
 # ==============================
 if __name__ == "__main__":
-    index = load_index()
-    engine = get_chat_engine(index)
+    print("\n🏔️ Sherpa Himalaya AI Ready (FAISS + Groq)\n")
+    used_tokens = 0
 
-    print("\n🏔️ Sherpa Himalaya AI Ready (Optimized Mode)\n")
-
-    used_tokens = 0   # track locally
+    from src.brain.chat_api import answer
 
     while True:
         user_input = input("You: ")
-
         if user_input.lower() in ["exit", "quit"]:
             break
 
-        # ==============================
-        # TOKEN BUDGET CHECK
-        # ==============================
-        estimated_tokens = count_tokens(user_input) + ESTIMATED_RESPONSE_TOKENS
-
-        if used_tokens + estimated_tokens > DAILY_LIMIT:
-            print("\n🚫 Daily token limit reached. Try again later.\n")
-            break
-
-        # ==============================
-        # SAFE REQUEST
-        # ==============================
         try:
-            response = engine.chat(user_input)
+            response = answer(user_input, top_k=8)
         except Exception as e:
-            err = str(e).lower()
-
-            if "tokens per day" in err:
-                print("\n🚫 Daily token limit reached. Please wait for reset.\n")
-                break
-            elif "rate limit" in err or "429" in err:
-                print("\n⚠️ Rate limited. Please wait and try again.\n")
-                continue
-            else:
-                raise e
-
-        # ==============================
-        # EXTRACT CONTEXT (TRUNCATED)
-        # ==============================
-        context_text = "".join(node.text[:300] for node in response.source_nodes)
-
-        if not context_text.strip():
-            fallback = (
-                "Namaste. I'm sorry, but I don't have information on that specific topic in our records. "
-                "Please contact our team at info@sherpahimalaya.com for more details."
-            )
-            print(f"\nAI: {fallback}\n")
+            print(f"\nError: {e}\n")
             continue
 
-        # ==============================
-        # TOKEN CALCULATION
-        # ==============================
-        total_tokens = (
-            count_tokens(user_input)
-            + count_tokens(context_text)
-            + count_tokens(str(response))
-        )
-
-        used_tokens += total_tokens
-        cost = (total_tokens / 1_000_000) * 0.59
-
-        # ==============================
-        # OUTPUT
-        # ==============================
-        print(f"\nAI: {response}")
-        print(f"\n📊 Tokens Used: {total_tokens}")
-        print(f"💰 Cost: ${cost:.6f}\n")
+        print(f"\nAI: {response}\n")
