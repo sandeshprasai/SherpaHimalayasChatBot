@@ -10,6 +10,7 @@ except Exception:
     GROQ_AVAILABLE = False
 
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from sentence_transformers import SentenceTransformer
 
 # Load env
 base_path = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +38,8 @@ def get_embedding_model(prefer_groq: bool = True):
             def _ensure_hf(self):
                 if self._hf is None:
                     try:
-                        self._hf = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+                        # prefer a local sentence-transformers model for robust fallback on Windows
+                        self._hf = SentenceTransformer("all-MiniLM-L6-v2")
                     except Exception:
                         self._hf = None
 
@@ -50,7 +52,9 @@ def get_embedding_model(prefer_groq: bool = True):
                     # fallback
                     self._ensure_hf()
                     if self._hf is not None:
-                        return self._hf.embed_query(text)
+                        # use sentence-transformers encode
+                        vec = self._hf.encode(text, convert_to_numpy=True)
+                        return vec.tolist()
                     raise
 
             def embed_documents(self, documents):
@@ -66,10 +70,12 @@ def get_embedding_model(prefer_groq: bool = True):
                     resp = self.client.embeddings.create(model=self.model, input=inputs)
                     return [item.embedding for item in resp.data]
                 except Exception:
-                    # fallback to HF
+                    # fallback to sentence-transformers
                     self._ensure_hf()
                     if self._hf is not None:
-                        return self._hf.embed_documents(inputs)
+                        vecs = self._hf.encode(inputs, convert_to_numpy=True)
+                        # vecs may be 2D numpy array
+                        return [v.tolist() for v in vecs]
                     raise
 
         embed_model = GroqEmbeddingWrapper(client, model_name)
