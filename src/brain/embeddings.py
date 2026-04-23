@@ -50,7 +50,7 @@ def get_embedding_model(prefer_groq: bool = True):
                 return [item.embedding for item in resp.data]
 
         embed_model = GroqEmbeddingWrapper(client, model_name)
-        Settings.embed_model = embed_model
+        # Do not set Settings.embed_model because LlamaIndex expects a BaseEmbedding instance.
         return embed_model
 
     # Fallback to local HuggingFace embedding
