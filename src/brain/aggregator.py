@@ -1,6 +1,7 @@
 import os
 import json
-from typing import Optional
+import re
+from typing import List, Optional
 
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 DOCSTORE_PATH = os.path.join(BASE, "data/vector_db/docstore.json")
@@ -20,56 +21,83 @@ def _get_numeric(metadata, key):
     except Exception:
         # if contains 'm' strip
         if isinstance(v, str):
-            import re
             m = re.search(r"(\d+)", v)
             if m:
                 return int(m.group(1))
     return None
 
 
-def shortest_trek():
+def _is_trek(doc: dict) -> bool:
+    md = doc.get('metadata', {}) or {}
+    typ = str(md.get('type', '')).lower()
+    if 'trek' in typ:
+        return True
+    # fallback: check title/text for the word 'trek'
+    title = str(md.get('title') or doc.get('text', ''))
+    if 'trek' in title.lower():
+        return True
+    return False
+
+
+def shortest_treks(top_k: int = 1) -> List[dict]:
     docs = ensure_docstore_loaded()
-    best = None
+    items = []
     for d in docs:
+        if not _is_trek(d):
+            continue
         md = d.get('metadata', {})
         dur = _get_numeric(md, 'duration_days') or _get_numeric(md, 'duration')
         if dur is None:
             continue
-        if best is None or dur < best[0]:
-            best = (dur, d)
-    return best[1] if best else None
+        items.append((dur, d))
+    items.sort(key=lambda x: x[0])
+    return [x[1] for x in items[:top_k]]
 
 
-def longest_trek():
+def shortest_trek() -> Optional[dict]:
+    lst = shortest_treks(1)
+    return lst[0] if lst else None
+
+
+def longest_treks(top_k: int = 1) -> List[dict]:
     docs = ensure_docstore_loaded()
-    best = None
+    items = []
     for d in docs:
+        if not _is_trek(d):
+            continue
         md = d.get('metadata', {})
         dur = _get_numeric(md, 'duration_days') or _get_numeric(md, 'duration')
         if dur is None:
             continue
-        if best is None or dur > best[0]:
-            best = (dur, d)
-    return best[1] if best else None
+        items.append((dur, d))
+    items.sort(key=lambda x: x[0], reverse=True)
+    return [x[1] for x in items[:top_k]]
 
 
-def highest_altitude():
+def longest_trek() -> Optional[dict]:
+    lst = longest_treks(1)
+    return lst[0] if lst else None
+
+
+def highest_altitude(top_k: int = 1) -> Optional[List[dict]]:
     docs = ensure_docstore_loaded()
-    best = None
+    items = []
     for d in docs:
         md = d.get('metadata', {})
         alt = _get_numeric(md, 'max_altitude_m') or _get_numeric(md, 'max_altitude')
         if alt is None:
             continue
-        if best is None or alt > best[0]:
-            best = (alt, d)
-    return best[1] if best else None
+        items.append((alt, d))
+    items.sort(key=lambda x: x[0], reverse=True)
+    return [x[1] for x in items[:top_k]]
 
 
-def easiest_trek():
+def easiest_trek() -> Optional[dict]:
     # simplistic: prefer difficulty labels containing 'easy' or 'normal'
     docs = ensure_docstore_loaded()
     for d in docs:
+        if not _is_trek(d):
+            continue
         md = d.get('metadata', {})
         diff = str(md.get('difficulty', '')).lower()
         if 'easy' in diff or 'normal' in diff:
@@ -77,7 +105,7 @@ def easiest_trek():
     return None
 
 
-def find_by_name(name: str):
+def find_by_name(name: str) -> Optional[dict]:
     docs = ensure_docstore_loaded()
     name = name.lower()
     for d in docs:
