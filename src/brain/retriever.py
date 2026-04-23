@@ -15,7 +15,7 @@ except Exception:
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(base_path, "../../"))
-DATA_DIR = os.path.join(project_root, "data/cleaned_separated")
+DATA_DIR = os.path.join(project_root, "data/rag_ready")
 VECTOR_DIR = os.path.join(project_root, "data/vector_db")
 FAISS_PATH = os.path.join(VECTOR_DIR, "faiss.index")
 DOCSTORE_PATH = os.path.join(VECTOR_DIR, "docstore.json")
