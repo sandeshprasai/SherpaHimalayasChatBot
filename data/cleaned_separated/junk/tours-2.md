@@ -1,0 +1,4 @@
+# URL: https://sherpahimalaya.genesiswtech.com/tours-2/
+
+Sherpa Himalaya provides you a well-designed Tour of main four Cities of Nepal. Our cities are Lumbini, Pokhara, Chitwan and Kathmandu Valley. These Tours are specially designed to the guest who has got a very limited time period in Nepal or If you get extra days in the Valley after completing any other activities. These tours are best to know the geography and Landscape of Nepal. You will be introduced to different culture, tradition, and language of different places.
+These Tours are programmed very short and you will be making more through the vehicle and this tour will mostly lead you to the most beautiful places of Nepal and some World Heritage Sites.

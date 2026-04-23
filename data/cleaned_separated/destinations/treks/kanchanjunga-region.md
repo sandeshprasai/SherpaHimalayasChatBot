@@ -1,0 +1,6 @@
+# URL: https://sherpahimalaya.genesiswtech.com/destinations/nepal/trekking/kanchanjunga-region/
+
+Kanchenjunga is third highest mountain in the world, and the most easterly of the 8000 meter...
+Sherpa Himalaya | Your travel Partner in Himalaya
+Make your adventure in Nepal with well renowned Trekking and Expedition company in Nepal. We Assure you to have amazing vacation with quality service.
+Kanchenjunga is third highest mountain in the world, and the most easterly of the 8000 meter...
