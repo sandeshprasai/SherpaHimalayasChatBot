@@ -196,8 +196,16 @@ class EntityResolver:
         text = re.sub(r"[^\w\s]", " ", text)   # remove punctuation
         text = re.sub(r"\s+", " ", text).strip()
         # Remove generic stop words that appear in many titles
-        stop = {"trek", "trekking", "the", "with", "and", "via", "to",
-                "from", "by", "in", "of", "a", "an", "days", "day"}
+        # Extend stop-words to exclude very generic location descriptors
+        # (e.g. "base", "camp", "valley") which can cause ambiguous
+        # fuzzy matches across multiple trips.
+        stop = {
+            "trek", "trekking", "the", "with", "and", "via", "to",
+            "from", "by", "in", "of", "a", "an", "days", "day",
+            "base", "camp", "valley", "pass", "lake", "peak",
+            "expedition", "helicopter", "fly", "tour", "shortest",
+            "longest", "short", "long",
+        }
         words = [w for w in text.split() if w not in stop]
         return " ".join(words)
 
