@@ -247,9 +247,29 @@ class Pipeline:
         self._used_tokens += tokens
         cost = gen.estimate_cost(tokens)
 
-        # Detect LLM fallback
+        # Detect LLM fallback. If the LLM couldn't be initialized or
+        # explicitly declined to answer, but a full document source is
+        # available, return the document content as a safe, factual answer
+        # (no LLM used).
         is_fallback = gen.is_fallback(answer)
         if is_fallback:
+            # Prefer returning the first (most relevant) source node's text
+            if source_nodes and getattr(source_nodes[0], 'text', None):
+                content = source_nodes[0].text.strip()
+                # Trim to a reasonable length
+                if len(content) > 2000:
+                    content = content[:2000] + "..."
+                return QueryResponse(
+                    answer      = content,
+                    intent      = req.intent,
+                    strategy    = decision.strategy,
+                    sources     = source_nodes,
+                    tokens_used = tokens,
+                    cost_usd    = cost,
+                    used_llm    = False,
+                    is_fallback = False,
+                )
+            # otherwise return the standard fallback message
             answer = FALLBACK_MESSAGE
 
         return QueryResponse(

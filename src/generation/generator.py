@@ -76,19 +76,41 @@ class Generator:
         Send prompt to LLM and return (answer_text, token_count).
         token_count is an estimate based on tiktoken.
         """
-        self._ensure_ready()
+        # Ensure LLM is initialized, but handle initialization failures
+        # gracefully so the pipeline can fall back to content-based answers.
+        try:
+            self._ensure_ready()
+        except Exception as e:
+            # Initialization failed (missing libs or misconfiguration).
+            # Return a safe fallback so the pipeline can continue.
+            return FALLBACK_MESSAGE, 0
 
         try:
             response = self._llm.complete(prompt)
             answer   = str(response).strip()
-        except Exception as e:
+        except Exception:
             # If the LLM call fails for any reason, return a safe fallback
             # message so the pipeline can handle it uniformly.
-            answer = FALLBACK_MESSAGE
-            return answer, 0
+            return FALLBACK_MESSAGE, 0
 
         tokens = self.count_tokens(prompt) + self.count_tokens(answer)
         return answer, tokens
+
+    def is_fallback(self, text: str) -> bool:
+        """Return True if the LLM admitted it could not answer."""
+        tl = text.lower()
+        return any(p in tl for p in FALLBACK_PHRASES)
+
+    def count_tokens(self, text: str) -> int:
+        # Counting tokens normally requires the encoder; if the encoder
+        # isn't available due to LLM init errors, fall back to a rough
+        # estimate (len/4).
+        try:
+            self._ensure_ready()
+            return len(self._enc.encode(str(text)))
+        except Exception:
+            # rough estimate: average 4 chars per token
+            return max(1, len(str(text)) // 4)
 
     def is_fallback(self, text: str) -> bool:
         """Return True if the LLM admitted it could not answer."""
