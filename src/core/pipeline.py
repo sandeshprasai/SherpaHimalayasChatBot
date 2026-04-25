@@ -79,17 +79,10 @@ class Pipeline:
         Full pipeline: raw text → QueryResponse.
         """
 
-        # ── 0. Budget check ────────────────────────────────────────────────
-        gen = self._get_generator()
-        estimated = (
-            gen.count_tokens(user_query)
-            + settings.estimated_resp_tokens
-        )
-        if self._used_tokens + estimated > settings.daily_token_limit:
-            return QueryResponse(
-                answer     = "🚫 Daily token limit reached. Please try again later.",
-                is_fallback= True,
-            )
+        # ── 0. Budget check (deferred until LLM needed) ────────────────────
+        # Generator/LLM initialization is deferred to avoid heavy dependency
+        # loading for metadata-only queries. Token-budget will be enforced
+        # immediately before any LLM call.
 
         # ── 1. Normalize ───────────────────────────────────────────────────
         normalized = normalize(user_query)
@@ -222,6 +215,17 @@ class Pipeline:
             source_nodes = [SourceNode(text=meta_answer)]
 
         prompt = self._builder.build(req, source_nodes)
+
+        # ── Initialize LLM and enforce token budget (deferred) ───────────
+        gen = self._get_generator()
+        estimated = gen.count_tokens(user_query) + settings.estimated_resp_tokens
+        if self._used_tokens + estimated > settings.daily_token_limit:
+            return QueryResponse(
+                answer     = "🚫 Daily token limit reached. Please try again later.",
+                is_fallback= True,
+                used_llm   = False,
+            )
+
         answer, tokens = gen.generate(prompt)
 
         self._used_tokens += tokens
