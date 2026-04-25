@@ -1,0 +1,178 @@
+"""
+understanding/entity_resolver.py
+──────────────────────────────────
+Extracts and resolves trek/peak/expedition names mentioned in a query
+against the known records in metadata_index.json.
+
+Why this matters:
+  "ghorepani circuit"  →  "Ghorepani Circuit Trek – 10 Days"
+  "EBC"               →  "Everest Base Camp Trek"  (after normalizer)
+  "ama dablam"        →  "Ama Dablam Expedition"
+
+Usage:
+    from understanding.entity_resolver import EntityResolver
+    resolver = EntityResolver()
+    entities = resolver.resolve("Compare Ghorepani trek vs EBC trek")
+    # → ["Ghorepani Circuit Trek – 10 Days", "Everest Base Camp Trek"]
+"""
+
+import os
+import sys
+import json
+import re
+
+# ── path setup ───────────────────────────────────────────────────────────────
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_SRC  = os.path.abspath(os.path.join(_HERE, ".."))
+_ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
+for _p in (_SRC, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from config.settings import settings
+
+
+class EntityResolver:
+    """
+    Loads all known titles from metadata_index.json and performs
+    fuzzy matching against a query string.
+    """
+
+    def __init__(self):
+        self._records: list[dict] = self._load()
+        # Pre-build a list of (normalized_title, original_title) for matching
+        self._title_map: list[tuple[str, str]] = [
+            (self._normalize_title(r["title"]), r["title"])
+            for r in self._records
+            if r.get("title")
+        ]
+
+    # ──────────────────────────────────────────────────────────────────────
+    # PUBLIC
+    # ──────────────────────────────────────────────────────────────────────
+
+    def resolve(self, query: str) -> list[str]:
+        """
+        Returns a list of canonical titles found in the query.
+        Ordered by position of match in the query (left to right).
+        """
+        query_norm = self._normalize_title(query)
+        found: list[tuple[int, str]] = []   # (match_position, canonical_title)
+
+        for norm_title, canonical in self._title_map:
+            # Build a set of significant words from the title (length > 3)
+            title_words = [w for w in norm_title.split() if len(w) > 3]
+            if not title_words:
+                continue
+
+            # Score: how many title words appear in the query
+            matches = sum(1 for w in title_words if w in query_norm)
+            coverage = matches / len(title_words)
+
+            # Require at least 50% word coverage AND at least 2 words matched
+            # (prevents false positives on short titles like "Nepal")
+            if coverage >= 0.5 and matches >= 2:
+                # Find position of first matched word
+                pos = min(
+                    query_norm.find(w)
+                    for w in title_words
+                    if w in query_norm
+                )
+                found.append((pos, canonical))
+
+        # Deduplicate, sort by position
+        seen = set()
+        result = []
+        for _, canonical in sorted(found):
+            if canonical not in seen:
+                seen.add(canonical)
+                result.append(canonical)
+
+        return result
+
+    def find_record(self, entity_name: str) -> dict | None:
+        """
+        Find the full metadata record for a canonical entity name.
+        """
+        name_norm = self._normalize_title(entity_name)
+        best_score = 0
+        best_record = None
+
+        for record in self._records:
+            title_norm = self._normalize_title(record.get("title", ""))
+            title_words = [w for w in title_norm.split() if len(w) > 3]
+            if not title_words:
+                continue
+
+            matches = sum(1 for w in title_words if w in name_norm)
+            score = matches / len(title_words)
+
+            if score > best_score:
+                best_score = score
+                best_record = record
+
+        # Accept slightly lower score for short titles, or direct substring match
+        if best_score >= 0.5:
+            return best_record
+        if best_score >= 0.4:
+            # if title is short, accept it
+            title_len = len([w for w in self._normalize_title(best_record.get("title","")).split() if len(w)>3]) if best_record else 0
+            if title_len <= 2:
+                return best_record
+        # direct substring fallback
+        if best_record and self._normalize_title(best_record.get("title","")) in name_norm:
+            return best_record
+        return None
+
+    def all_titles(self) -> list[str]:
+        """Return all known canonical titles."""
+        return [canonical for _, canonical in self._title_map]
+
+    # ──────────────────────────────────────────────────────────────────────
+    # PRIVATE
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _load(self) -> list[dict]:
+        if not os.path.exists(settings.metadata_index):
+            print(
+                f"⚠️  metadata_index.json not found — entity resolution disabled."
+            )
+            return []
+        with open(settings.metadata_index, encoding="utf-8") as f:
+            return json.load(f)
+
+    @staticmethod
+    def _normalize_title(text: str) -> str:
+        """Lowercase, remove special chars, collapse spaces."""
+        text = text.lower()
+        text = re.sub(r"[^\w\s]", " ", text)   # remove punctuation
+        text = re.sub(r"\s+", " ", text).strip()
+        # Remove generic stop words that appear in many titles
+        stop = {"trek", "trekking", "the", "with", "and", "via", "to",
+                "from", "by", "in", "of", "a", "an", "days", "day"}
+        words = [w for w in text.split() if w not in stop]
+        return " ".join(words)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# QUICK TEST
+# ──────────────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    resolver = EntityResolver()
+
+    tests = [
+        "What is the duration of Ghorepani Circuit Trek?",
+        "Compare Everest Base Camp Trek vs Annapurna Base Camp Trek",
+        "Tell me about Ama Dablam Expedition",
+        "Which trek is best for beginners?",
+        "What is included in Langtang Valley Trek package?",
+        "Manaslu Circuit highlights",
+    ]
+
+    print("\n🔍 Entity Resolver Test\n" + "─" * 55)
+    for q in tests:
+        entities = resolver.resolve(q)
+        print(f"Q: {q}")
+        print(f"   → {entities if entities else '(none found)'}")
+        print()

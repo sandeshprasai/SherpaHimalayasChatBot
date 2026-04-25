@@ -14,12 +14,7 @@ def load_json_docs(base_path):
                         
                         # BUILD A VERY DETAILED TEXT BLOCK
                         text = f"TITLE: {data.get('title')}\n"
-                        text += f"TYPE: {data.get('category', data.get('type', 'trek'))}\n"
-                        text += f"REGION: {data.get('region', 'Unknown')}\n"
-                        text += f"DURATION (DAYS): {data.get('duration_days', 'Unknown')}\n"
-                        text += f"DIFFICULTY: {data.get('difficulty', 'Unknown')}\n"
-                        if 'max_altitude_m' in data:
-                            text += f"MAXIMUM ALTITUDE: {data['max_altitude_m']} meters\n"
+                        text += f"TYPE: {data.get('type', 'trek')}\n"
                         text += f"SUMMARY: {data.get('summary', '')}\n"
                         
                         if 'itinerary' in data:
@@ -46,5 +41,5 @@ def load_json_docs(base_path):
                 except Exception as e:
                     print(f"Skipping {file}: {e}")
                     
-    print(f"Successfully loaded {len(documents)} structured documents.")
+    print(f"✅ Successfully loaded {len(documents)} structured documents.")
     return documents
