@@ -36,11 +36,20 @@ class MetadataRetriever:
         with open(meta_path, encoding="utf-8") as f:
             all_records: list[dict] = json.load(f)
 
-        # Only keep destination records (treks, peaks, expeditions, tours)
-        self._records = [
-            r for r in all_records
-            if r.get("_source", "").startswith("destinations/")
-        ]
+        # Heuristic: determine which records represent destinations (treks/tours/expeditions)
+        def _looks_like_destination(rec: dict) -> bool:
+            src = (rec.get("_source") or "").lower()
+            cat = (rec.get("category") or "").lower()
+            title = (rec.get("title") or "").lower()
+            if src.startswith("destinations/"):
+                return True
+            if any(k in cat for k in ("trek", "expedition", "tour", "peak")):
+                return True
+            if any(k in title for k in ("trek", "expedition", "peak", "tour")):
+                return True
+            return False
+
+        self._records = [r for r in all_records if _looks_like_destination(r)]
 
     # ──────────────────────────────────────────────────────────────────────
     # PUBLIC ENTRY POINT
