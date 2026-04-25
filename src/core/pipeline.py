@@ -234,6 +234,31 @@ class Pipeline:
 
         # ── Initialize LLM and enforce token budget (deferred) ───────────
         gen = self._get_generator()
+
+        # Try to initialize the LLM; if initialization fails, fall back to
+        # returning the first retrieved document content (no LLM used).
+        try:
+            gen._ensure_ready()
+        except Exception as e:
+            self._log(f"LLM init failed: {e}")
+            if source_nodes and getattr(source_nodes[0], 'text', None):
+                content = source_nodes[0].text.strip()
+                if len(content) > 2000:
+                    content = content[:2000] + "..."
+                return QueryResponse(
+                    answer      = content,
+                    intent      = req.intent,
+                    strategy    = decision.strategy,
+                    sources     = source_nodes,
+                    used_llm    = False,
+                    is_fallback = False,
+                )
+            return QueryResponse(
+                answer     = FALLBACK_MESSAGE,
+                is_fallback= True,
+                used_llm   = False,
+            )
+
         estimated = gen.count_tokens(user_query) + settings.estimated_resp_tokens
         if self._used_tokens + estimated > settings.daily_token_limit:
             return QueryResponse(
