@@ -188,6 +188,22 @@ class Pipeline:
 
         # ── 6. Generate ────────────────────────────────────────────────────
 
+        # If retrieval returned nothing but entities were resolved, try
+        # fetching the full document for the first resolved entity and
+        # use it as context for the LLM. This helps with "how to book" or
+        # other procedural lookups where a dedicated page exists.
+        if not source_nodes and req.entities:
+            try:
+                full_text = self._fetch_full_doc(req)
+                if full_text:
+                    source_nodes = [SourceNode(
+                        text=full_text,
+                        title=req.entities[0] if req.entities else None,
+                    )]
+                    self._log("fallback: fetched full document for entity")
+            except Exception as e:
+                self._log(f"full doc fetch failed: {e}")
+
         # Metadata-only path: skip LLM entirely
         if decision.metadata_only and meta_answer:
             self._log("metadata_only: skipping LLM")
