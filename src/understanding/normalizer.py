@@ -47,7 +47,6 @@ _ALIASES: list[tuple[str, str]] = [
     # ── Common colloquial phrasings ────────────────────────────────────────
     (r"\bhimalaya[s]?\s+trip\b",   "himalaya trek"),
     (r"\bnepal\s+hiking\b",        "trekking in Nepal"),
-    (r"\bbase camp trek\b",        "Everest Base Camp Trek"),
     (r"\bpoon\s*hill\b",           "Poon Hill"),
     (r"\bghorepani\s+poon\s*hill\b","Ghorepani Poonhill Trek"),
 

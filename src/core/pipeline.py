@@ -103,6 +103,14 @@ class Pipeline:
 
         # ── 3. Resolve entities ────────────────────────────────────────────
         req.entities = self._resolver.resolve(normalized)
+        # If user asked for a comparison but we couldn't resolve two entities, avoid substituting another trip
+        if req.intent == QueryIntent.COMPARE and len(req.entities) < 2:
+            return QueryResponse(
+                answer      = FALLBACK_MESSAGE,
+                intent      = req.intent,
+                is_fallback = True,
+                used_llm    = False,
+            )
         self._log(f"entities: {req.entities}")
 
         # If classifier is low-confidence, run multiple retrieval strategies

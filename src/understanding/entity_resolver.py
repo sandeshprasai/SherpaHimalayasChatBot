@@ -61,6 +61,12 @@ class EntityResolver:
         found: list[tuple[int, str, str, dict, str]] = []
 
         for norm_title, canonical, record in self._title_map:
+            # Prefer exact phrase matches first
+            if norm_title in query_norm:
+                pos = query_norm.find(norm_title)
+                key_token = (norm_title.split()[0] if norm_title else norm_title)
+                found.append((pos, key_token, canonical, record, norm_title))
+                continue
             # Build a set of significant words from the title (length > 3)
             title_words = [w for w in norm_title.split() if len(w) > 3]
             if not title_words:
