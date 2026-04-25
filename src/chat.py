@@ -8,6 +8,22 @@ Run from project root:
 """
 
 import os
+# Early telemetry/analytics suppression to avoid noisy errors from deps
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("HUGGINGFACE_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("DISABLE_TELEMETRY", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+try:
+    import analytics
+    analytics.capture = lambda *args, **kwargs: None
+except Exception:
+    pass
+try:
+    import posthog
+    posthog.capture = lambda *args, **kwargs: None
+except Exception:
+    pass
+
 import sys
 
 # ── path setup ───────────────────────────────────────────────────────────────

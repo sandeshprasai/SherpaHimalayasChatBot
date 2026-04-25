@@ -16,6 +16,17 @@ os.environ.setdefault("DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("LLAMA_INDEX_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("CHROMA_DISABLE_TELEMETRY", "1")
+# Try to monkeypatch common analytics libraries to avoid noisy errors
+try:
+    import analytics
+    analytics.capture = lambda *args, **kwargs: None
+except Exception:
+    pass
+try:
+    import posthog
+    posthog.capture = lambda *args, **kwargs: None
+except Exception:
+    pass
 from dataclasses import dataclass, field
 
 

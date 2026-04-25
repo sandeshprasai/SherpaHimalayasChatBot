@@ -69,6 +69,9 @@ class EntityResolver:
             matches = sum(1 for w in title_words if w in query_norm)
             coverage = matches / len(title_words)
 
+            # Significant query words (used for single-word queries)
+            query_words = [w for w in query_norm.split() if len(w) > 3]
+
             # Require at least 50% word coverage AND at least 2 words matched
             # (prevents false positives on short titles like "Nepal")
             if coverage >= 0.5 and matches >= 2:
@@ -79,6 +82,23 @@ class EntityResolver:
                     if w in query_norm
                 )
                 found.append((pos, canonical))
+            else:
+                # Accept single-word queries that match a key title token
+                if len(query_words) == 1 and query_words[0] in title_words:
+                    pos = query_norm.find(query_words[0])
+                    found.append((pos, canonical))
+                # Accept when title is very short (<=2 significant words) and at least 1 match
+                elif matches >= 1 and len(title_words) <= 2:
+                    pos = min(
+                        query_norm.find(w)
+                        for w in title_words
+                        if w in query_norm
+                    ) if any(w in query_norm for w in title_words) else 0
+                    found.append((pos, canonical))
+                # Direct substring match as a final fallback
+                elif norm_title in query_norm or query_norm in norm_title:
+                    pos = query_norm.find(norm_title) if norm_title in query_norm else 0
+                    found.append((pos, canonical))
 
         # Deduplicate, sort by position
         seen = set()
