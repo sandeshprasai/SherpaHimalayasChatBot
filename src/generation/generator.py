@@ -78,8 +78,14 @@ class Generator:
         """
         self._ensure_ready()
 
-        response = self._llm.complete(prompt)
-        answer   = str(response).strip()
+        try:
+            response = self._llm.complete(prompt)
+            answer   = str(response).strip()
+        except Exception as e:
+            # If the LLM call fails for any reason, return a safe fallback
+            # message so the pipeline can handle it uniformly.
+            answer = FALLBACK_MESSAGE
+            return answer, 0
 
         tokens = self.count_tokens(prompt) + self.count_tokens(answer)
         return answer, tokens

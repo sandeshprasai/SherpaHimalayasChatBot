@@ -150,23 +150,32 @@ def _extract_region(text: str) -> str | None:
 def classify(req: QueryRequest) -> QueryRequest:
     """
     Populates req.intent, req.strategy, req.agg_op, req.agg_field,
-    and req.filters in-place. Returns the same request for chaining.
+    and req.filters in-place. Also sets a confidence score on the
+    classification. Returns the same request for chaining.
 
     Uses req.normalized if set, otherwise req.text.
     """
     text = req.normalized or req.text
+
+    # default confidence (lower than 1 so low-confidence triggers parallel paths)
+    req.intent_confidence = 0.6
+    req.intent_candidates = []
 
     # ── 1. COMPARE ──────────────────────────────────────────────────────────
     if _match(_COMPARE_PATTERNS, text):
         req.intent   = QueryIntent.COMPARE
         req.strategy = RetrievalStrategy.METADATA
         req.agg_field = _infer_field(text)
+        req.intent_confidence = 0.95
+        req.intent_candidates.append('compare')
         return req
 
     # ── 2. SUMMARIZE ─────────────────────────────────────────────────────────
     if _match(_SUMMARIZE_PATTERNS, text):
         req.intent   = QueryIntent.SUMMARIZE
         req.strategy = RetrievalStrategy.FULL_DOC
+        req.intent_confidence = 0.95
+        req.intent_candidates.append('summarize')
         return req
 
     # ── 3. AGGREGATE ─────────────────────────────────────────────────────────
@@ -175,6 +184,8 @@ def classify(req: QueryRequest) -> QueryRequest:
         req.strategy  = RetrievalStrategy.METADATA
         req.agg_op    = _infer_op(text) or "max"
         req.agg_field = _infer_field(text) or "duration_days"
+        req.intent_confidence = 0.9
+        req.intent_candidates.append('aggregate')
 
         # Special case: "easiest" → min difficulty
         if re.search(r"\b(easiest|beginner)\b", text, re.IGNORECASE):
@@ -193,6 +204,8 @@ def classify(req: QueryRequest) -> QueryRequest:
     if _match(_FILTER_PATTERNS, text):
         req.intent   = QueryIntent.FILTER
         req.strategy = RetrievalStrategy.HYBRID
+        req.intent_confidence = 0.9
+        req.intent_candidates.append('filter')
 
         duration = _extract_duration(text)
         region   = _extract_region(text)
@@ -209,8 +222,12 @@ def classify(req: QueryRequest) -> QueryRequest:
         return req
 
     # ── 5. LOOKUP (default) ──────────────────────────────────────────────────
+    # Lower confidence because default fallback — allow pipeline to run hybrid
+    # strategies when classifier is uncertain.
     req.intent   = QueryIntent.LOOKUP
     req.strategy = RetrievalStrategy.VECTOR
+    req.intent_confidence = 0.65
+    req.intent_candidates.append('lookup')
     return req
 
 

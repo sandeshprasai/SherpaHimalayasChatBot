@@ -99,40 +99,91 @@ class Pipeline:
 
         # ── 2. Classify ────────────────────────────────────────────────────
         classify(req)
-        self._log(f"intent={req.intent.value}  strategy={req.strategy.value}")
+        self._log(f"intent={req.intent.value}  strategy={req.strategy.value}  confidence={getattr(req, 'intent_confidence', 1.0)}")
 
         # ── 3. Resolve entities ────────────────────────────────────────────
         req.entities = self._resolver.resolve(normalized)
         self._log(f"entities: {req.entities}")
 
-        # ── 4. Route ───────────────────────────────────────────────────────
-        decision = self._router.route(req)
-        self._log(f"routing: {decision.reason}")
+        # If classifier is low-confidence, run multiple retrieval strategies
+        # (metadata + vector) and prefer metadata when it yields an answer.
+        low_confidence = getattr(req, 'intent_confidence', 1.0) < 0.75
 
-        # ── 5. Retrieve ────────────────────────────────────────────────────
         source_nodes: list[SourceNode] = []
         meta_answer:  str | None       = None
 
-        # A) Metadata only (aggregate / compare / filter)
-        if decision.use_metadata and not decision.use_vector:
-            meta_answer = self._get_meta().answer(req)
+        if low_confidence:
+            self._log("low classifier confidence — running metadata + vector retrieval")
+            # Try metadata answer first (fast)
+            try:
+                meta_answer = self._get_meta().answer(req)
+            except Exception:
+                meta_answer = None
 
-        # B) Hybrid (filter + vector rerank)
-        elif decision.use_metadata and decision.use_vector:
-            source_nodes, meta_answer = self._get_hybrid().search(req)
+            # Always run vector search as backup
+            try:
+                vec_nodes = self._get_vec().search(normalized)
+            except Exception:
+                vec_nodes = []
 
-        # C) Full document fetch (summarize)
-        elif decision.use_full_doc:
-            full_text = self._fetch_full_doc(req)
-            if full_text:
-                source_nodes = [SourceNode(
-                    text=full_text,
-                    title=req.entities[0] if req.entities else None,
-                )]
+            # If metadata gave a solid answer, prefer it (skip LLM)
+            if meta_answer:
+                source_nodes = []
+            else:
+                source_nodes = vec_nodes
 
-        # D) Pure vector (lookup / general)
+            # Continue to generation/routing logic below using whichever we have
+            decision = self._router.route(req)
+            self._log(f"routing (post-confidence) : {decision.reason}")
+
         else:
-            source_nodes = self._get_vec().search(normalized)
+            # ── 4. Route ───────────────────────────────────────────────────────
+            decision = self._router.route(req)
+            self._log(f"routing: {decision.reason}")
+
+            # ── 5. Retrieve ────────────────────────────────────────────────────
+            # A) Metadata only (aggregate / compare / filter)
+            if decision.use_metadata and not decision.use_vector:
+                try:
+                    meta_answer = self._get_meta().answer(req)
+                except Exception as e:
+                    self._log(f"metadata retrieval failed: {e}")
+                    meta_answer = None
+
+            # B) Hybrid (filter + vector rerank)
+            elif decision.use_metadata and decision.use_vector:
+                try:
+                    source_nodes, meta_answer = self._get_hybrid().search(req)
+                except Exception as e:
+                    self._log(f"hybrid retrieval failed: {e}")
+                    # fallback to metadata-only
+                    try:
+                        meta_answer = self._get_meta().answer(req)
+                        source_nodes = []
+                    except Exception:
+                        meta_answer = None
+                        source_nodes = []
+
+            # C) Full document fetch (summarize)
+            elif decision.use_full_doc:
+                try:
+                    full_text = self._fetch_full_doc(req)
+                    if full_text:
+                        source_nodes = [SourceNode(
+                            text=full_text,
+                            title=req.entities[0] if req.entities else None,
+                        )]
+                except Exception as e:
+                    self._log(f"full doc fetch failed: {e}")
+                    source_nodes = []
+
+            # D) Pure vector (lookup / general)
+            else:
+                try:
+                    source_nodes = self._get_vec().search(normalized)
+                except Exception as e:
+                    self._log(f"vector retrieval failed: {e}")
+                    source_nodes = []
 
         # ── 6. Generate ────────────────────────────────────────────────────
 

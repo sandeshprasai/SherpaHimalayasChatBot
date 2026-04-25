@@ -63,6 +63,13 @@ class QueryRequest:
     # Resolved entity names extracted from the query
     entities:    list[str]         = field(default_factory=list)
 
+    # Classifier confidence (0.0 - 1.0). If low, pipeline may run multiple
+    # retrieval strategies in parallel and ask for disambiguation.
+    intent_confidence: float      = 1.0
+
+    # Optional additional intent candidates (for debugging / disambiguation).
+    intent_candidates: list[str]  = field(default_factory=list)
+
     # Scalar filters for metadata retrieval
     # e.g. {"region": "Annapurna", "duration_days": 7, "beginner_friendly": True}
     filters:     dict[str, Any]    = field(default_factory=dict)
