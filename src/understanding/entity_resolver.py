@@ -181,12 +181,14 @@ class EntityResolver:
     # ──────────────────────────────────────────────────────────────────────
 
     def _load(self) -> list[dict]:
-        if not os.path.exists(settings.metadata_index):
+        # Prefer a cleaned metadata index if available
+        meta_path = settings.cleaned_metadata_index if os.path.exists(settings.cleaned_metadata_index) else settings.metadata_index
+        if not os.path.exists(meta_path):
             print(
                 f"⚠️  metadata_index.json not found — entity resolution disabled."
             )
             return []
-        with open(settings.metadata_index, encoding="utf-8") as f:
+        with open(meta_path, encoding="utf-8") as f:
             return json.load(f)
 
     @staticmethod
