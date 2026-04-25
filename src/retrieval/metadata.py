@@ -31,7 +31,9 @@ from core.schema import QueryRequest, QueryIntent
 class MetadataRetriever:
 
     def __init__(self):
-        with open(settings.metadata_index, encoding="utf-8") as f:
+        # Prefer a cleaned metadata index when available (produced by metadata_cleaner)
+        meta_path = settings.cleaned_metadata_index if os.path.exists(settings.cleaned_metadata_index) else settings.metadata_index
+        with open(meta_path, encoding="utf-8") as f:
             all_records: list[dict] = json.load(f)
 
         # Only keep destination records (treks, peaks, expeditions, tours)

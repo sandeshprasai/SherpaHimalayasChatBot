@@ -46,6 +46,8 @@ class Settings:
     rag_ready_dir:    str = os.path.join(_PROJECT_ROOT, "data/rag_ready")
     vector_db_dir:    str = os.path.join(_PROJECT_ROOT, "data/vector_db")
     metadata_index:   str = os.path.join(_PROJECT_ROOT, "data/rag_ready/metadata_index.json")
+    # Optional cleaned metadata produced by src/utils/metadata_cleaner.py
+    cleaned_metadata_index: str = os.path.join(_PROJECT_ROOT, "data/rag_ready/metadata_index.cleaned.json")
 
     # ── LLM ────────────────────────────────────────────────────────────────
     llm_model:        str = "llama-3.3-70b-versatile"   # groq
