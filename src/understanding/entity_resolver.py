@@ -40,9 +40,9 @@ class EntityResolver:
 
     def __init__(self):
         self._records: list[dict] = self._load()
-        # Pre-build a list of (normalized_title, original_title) for matching
-        self._title_map: list[tuple[str, str]] = [
-            (self._normalize_title(r["title"]), r["title"])
+        # Pre-build a list of (normalized_title, original_title, record_meta) for matching
+        self._title_map: list[tuple[str, str, dict]] = [
+            (self._normalize_title(r["title"]), r["title"], r)
             for r in self._records
             if r.get("title")
         ]
@@ -57,58 +57,80 @@ class EntityResolver:
         Ordered by position of match in the query (left to right).
         """
         query_norm = self._normalize_title(query)
-        found: list[tuple[int, str]] = []   # (match_position, canonical_title)
+        # found entries will hold tuples: (position_in_query, key_token, canonical_title, record, norm_title)
+        found: list[tuple[int, str, str, dict, str]] = []
 
-        for norm_title, canonical in self._title_map:
+        for norm_title, canonical, record in self._title_map:
             # Build a set of significant words from the title (length > 3)
             title_words = [w for w in norm_title.split() if len(w) > 3]
             if not title_words:
                 continue
 
             # Score: how many title words appear in the query
-            matches = sum(1 for w in title_words if w in query_norm)
-            coverage = matches / len(title_words)
+            matched_tokens = [w for w in title_words if w in query_norm]
+            matches = len(matched_tokens)
+            coverage = matches / len(title_words) if title_words else 0.0
 
             # Significant query words (used for single-word queries)
             query_words = [w for w in query_norm.split() if len(w) > 3]
 
-            # Require at least 50% word coverage AND at least 2 words matched
-            # (prevents false positives on short titles like "Nepal")
+            key_token = None
+            pos = 0
+
             if coverage >= 0.5 and matches >= 2:
-                # Find position of first matched word
-                pos = min(
-                    query_norm.find(w)
-                    for w in title_words
-                    if w in query_norm
-                )
-                found.append((pos, canonical))
+                # position of first matched token in the query
+                pos = min(query_norm.find(w) for w in matched_tokens)
+                key_token = min(matched_tokens, key=lambda w: query_norm.find(w))
+                found.append((pos, key_token, canonical, record, norm_title))
             else:
                 # Accept single-word queries that match a key title token
                 if len(query_words) == 1 and query_words[0] in title_words:
-                    pos = query_norm.find(query_words[0])
-                    found.append((pos, canonical))
+                    key_token = query_words[0]
+                    pos = query_norm.find(key_token)
+                    found.append((pos, key_token, canonical, record, norm_title))
                 # Accept when title is very short (<=2 significant words) and at least 1 match
                 elif matches >= 1 and len(title_words) <= 2:
-                    pos = min(
-                        query_norm.find(w)
-                        for w in title_words
-                        if w in query_norm
-                    ) if any(w in query_norm for w in title_words) else 0
-                    found.append((pos, canonical))
+                    pos = min(query_norm.find(w) for w in matched_tokens) if matched_tokens else 0
+                    key_token = min(matched_tokens, key=lambda w: query_norm.find(w)) if matched_tokens else None
+                    found.append((pos, key_token or norm_title, canonical, record, norm_title))
                 # Direct substring match as a final fallback
                 elif norm_title in query_norm or query_norm in norm_title:
                     pos = query_norm.find(norm_title) if norm_title in query_norm else 0
-                    found.append((pos, canonical))
+                    # choose a token from the norm_title as key
+                    key_token = (norm_title.split()[0] if norm_title else norm_title)
+                    found.append((pos, key_token, canonical, record, norm_title))
 
-        # Deduplicate, sort by position
-        seen = set()
-        result = []
-        for _, canonical in sorted(found):
-            if canonical not in seen:
-                seen.add(canonical)
-                result.append(canonical)
+        # Group candidates by key_token and pick the best-scoring record per token
+        candidates: dict[str, list[tuple[int, str, dict, str]]] = {}
+        for pos, key_token, canonical, record, norm_title in found:
+            candidates.setdefault(key_token, []).append((pos, canonical, record, norm_title))
 
-        return result
+        def score_record(rec: dict, norm_title: str) -> int:
+            s = 0
+            if norm_title and norm_title in query_norm:
+                s += 100
+            cat = (rec.get('category') or '').lower()
+            if 'trek' in cat or 'expedition' in cat or 'tour' in cat:
+                s += 50
+            if rec.get('duration_days'):
+                s += 10
+            if rec.get('max_altitude_m'):
+                s += 10
+            if rec.get('region'):
+                s += 5
+            if rec.get('summary'):
+                s += 2
+            return s
+
+        selected: list[tuple[int, str]] = []  # (pos, canonical)
+        for key, items in candidates.items():
+            # pick best by score, tie-breaker by earliest position
+            best = max(items, key=lambda it: (score_record(it[2], it[3]), -it[0]))
+            selected.append((best[0], best[1]))
+
+        # sort selected by position and return canonicals
+        selected.sort(key=lambda x: x[0])
+        return [c for _, c in selected]
 
     def find_record(self, entity_name: str) -> dict | None:
         """
