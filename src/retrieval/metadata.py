@@ -82,16 +82,59 @@ class MetadataRetriever:
         if field == "difficulty":
             return self._aggregate_difficulty(op)
 
-        # Exclude records with zero/null values (region pages, stubs)
-        valid = [
+        # Start with records that have a valid scalar for this field
+        candidates = [
             r for r in self._records
             if r.get(field) is not None and r.get(field) != 0
         ]
-        if not valid:
+
+        # Apply filters from the request (if present). Important: users
+        # asking about "treks" should not get "tours" like rafting.
+        filters = getattr(req, 'filters', {}) or {}
+        if 'category' in filters:
+            cat = str(filters['category']).lower()
+            candidates = [r for r in candidates if (r.get('category') or '').lower() == cat]
+        if 'is_trek' in filters:
+            val = bool(filters['is_trek'])
+            candidates = [r for r in candidates if bool(r.get('is_trek')) == val]
+        if 'region' in filters:
+            region = str(filters['region']).lower()
+            candidates = [r for r in candidates if region in ((r.get('region') or '').lower())]
+
+        if not candidates:
             return None
 
-        winner = max(valid, key=lambda r: r[field]) if op == "max" \
-            else min(valid, key=lambda r: r[field])
+        # Support top-k aggregation when requested (e.g., "top 3 shortest treks")
+        top_k = getattr(req, 'top_k', None) or None
+
+        if top_k and isinstance(top_k, int) and top_k > 1:
+            # For difficulty, use the difficulty_rank mapping
+            if field == 'difficulty':
+                rank = settings.difficulty_rank
+                valid = [r for r in candidates if r.get('difficulty') and r['difficulty'].lower() in rank]
+                if not valid:
+                    return None
+                sorted_list = sorted(valid, key=lambda r: rank.get(r['difficulty'].lower(), 99), reverse=(op == 'max'))
+            else:
+                # numeric sort
+                sorted_list = sorted(candidates, key=lambda r: (r.get(field) is None, r.get(field)), reverse=(op == 'max'))
+
+            top_list = sorted_list[:top_k]
+
+            label = _field_label(field)
+            unit  = _field_unit(field)
+
+            lines = [f"Top {len(top_list)} {label} ({'highest' if op=='max' else 'lowest'}) among matching destinations:\n"]
+            for i, r in enumerate(top_list, 1):
+                val = r.get(field)
+                val_str = str(val) + unit if val is not None else 'N/A'
+                lines.append(
+                    f"{i}. **{r.get('title')}** — {val_str}\n   - Region: {r.get('region','N/A')}\n   - Difficulty: {r.get('difficulty','N/A')}\n   - {(r.get('summary') or '')[:140]}…\n"
+                )
+            return "\n".join(lines)
+
+        # Default single-winner behavior
+        winner = max(candidates, key=lambda r: r[field]) if op == "max" else min(candidates, key=lambda r: r[field])
 
         adj   = _op_adjective(op, field)
         label = _field_label(field)
@@ -136,6 +179,18 @@ class MetadataRetriever:
     def _filter(self, req: QueryRequest) -> str:
         records = list(self._records)
         filters = req.filters
+
+        # Category
+        if cat := filters.get("category"):
+            records = [
+                r for r in records
+                if (r.get('category') or '').lower() == str(cat).lower()
+            ]
+
+        # is_trek flag
+        if filters.get('is_trek') is not None:
+            val = bool(filters.get('is_trek'))
+            records = [r for r in records if bool(r.get('is_trek')) == val]
 
         # Region
         if region := filters.get("region"):

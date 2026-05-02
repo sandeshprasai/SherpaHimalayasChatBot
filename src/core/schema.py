@@ -80,6 +80,9 @@ class QueryRequest:
     # Field to aggregate on  ("duration_days" | "max_altitude_m" | "difficulty")
     agg_field:   str | None        = None
 
+    # Optional "top k" hint extracted from queries like "top 3 shortest treks"
+    top_k:       int | None        = None
+
     def __post_init__(self):
         # Default normalized to original text if not set
         if not self.normalized:
@@ -122,3 +125,9 @@ class QueryResponse:
 
     # True if we hit the fallback (LLM couldn't answer from context)
     is_fallback: bool = False
+
+    # Clarification / multi-turn support
+    # When True, the pipeline is asking the user to disambiguate their query.
+    needs_clarification: bool = False
+    # The clarifying question to present to the user (if any)
+    clarification: str | None = None

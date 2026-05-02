@@ -135,6 +135,18 @@ def _extract_duration(text: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _extract_top_n(text: str) -> int | None:
+    # matches 'top 3', 'top-3', 'top 10'
+    m = re.search(r"\btop\s*-?\s*(\d{1,2})\b", text, re.IGNORECASE)
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+    # fallback: 'top three' (word numbers) could be implemented later
+    return None
+
+
 def _extract_region(text: str) -> str | None:
     tl = text.lower()
     return next(
@@ -147,6 +159,49 @@ def _extract_region(text: str) -> str | None:
 # MAIN CLASSIFIER
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _llm_classify(text: str) -> dict | None:
+    """
+    Use the LLM to classify intent. Returns a dict with keys:
+      - intent (one of QueryIntent values)
+      - strategy (one of RetrievalStrategy values)
+      - confidence (0.0-1.0)
+      - agg_op, agg_field, filters (optional)
+    Returns None on failure (LLM unavailable or parse error).
+    """
+    try:
+        # Import lazily to avoid heavy deps when not available
+        from generation.generator import Generator
+        import json
+
+        gen = Generator()
+
+        prompt = (
+            "You are a classifier. Given the user query, return a JSON object "
+            "with fields: intent (one of: lookup, aggregate, filter, compare, summarize, general), "
+            "strategy (vector/metadata/hybrid/full_doc), confidence (0.0-1.0), "
+            "agg_op (max/min or null), agg_field (duration_days, max_altitude_m, difficulty or null), "
+            "filters (an object with possible keys duration_days:int and region:string). "
+            "Respond with ONLY valid JSON. Examples:\n"
+            "Query: 'Which trek has the highest altitude?' -> {\"intent\":\"aggregate\",\"strategy\":\"metadata\",\"confidence\":0.95,\"agg_op\":\"max\",\"agg_field\":\"max_altitude_m\"}\n"
+            "Query: 'Suggest a 7-day trek in Annapurna region' -> {\"intent\":\"filter\",\"strategy\":\"hybrid\",\"confidence\":0.9,\"filters\":{\"duration_days\":7,\"region\":\"Annapurna\"}}\n\n"
+            f"Query: {json.dumps(text)}\n\nOutput JSON:"
+        )
+
+        out, _ = gen.generate(prompt)
+        out = out.strip()
+        # Some LLMs may add surrounding text; try to find first JSON block
+        start = out.find('{')
+        end = out.rfind('}')
+        if start == -1 or end == -1:
+            return None
+        js = out[start:end+1]
+        data = json.loads(js)
+
+        return data
+    except Exception:
+        return None
+
+
 def classify(req: QueryRequest) -> QueryRequest:
     """
     Populates req.intent, req.strategy, req.agg_op, req.agg_field,
@@ -154,9 +209,73 @@ def classify(req: QueryRequest) -> QueryRequest:
     classification. Returns the same request for chaining.
 
     Uses req.normalized if set, otherwise req.text.
+    Attempts LLM-based classification first; falls back to rule-based.
     """
     text = req.normalized or req.text
 
+    # Heuristic category hints: if the user mentions 'trek' or 'tour' explicitly,
+    # set a category filter so retrieval prefers appropriate items. Do this
+    # before LLM classification so LLM outputs may override it.
+    if 'category' not in req.filters:
+        if re.search(r"\btrek(king)?s?\b", text, re.IGNORECASE):
+            req.filters['category'] = 'trek'
+        elif re.search(r"\b(tour|rafting|raft|safari|kayak|package|city tour|sightseeing)\b", text, re.IGNORECASE):
+            req.filters['category'] = 'tour'
+
+    # Try LLM-based classification (preferred)
+    llm_out = _llm_classify(text)
+    if llm_out:
+        try:
+            intent_map = {
+                'lookup': QueryIntent.LOOKUP,
+                'aggregate': QueryIntent.AGGREGATE,
+                'filter': QueryIntent.FILTER,
+                'compare': QueryIntent.COMPARE,
+                'summarize': QueryIntent.SUMMARIZE,
+                'general': QueryIntent.GENERAL,
+            }
+            strat_map = {
+                'vector': RetrievalStrategy.VECTOR,
+                'metadata': RetrievalStrategy.METADATA,
+                'hybrid': RetrievalStrategy.HYBRID,
+                'full_doc': RetrievalStrategy.FULL_DOC,
+            }
+            it = intent_map.get(str(llm_out.get('intent', '')).lower())
+            st = strat_map.get(str(llm_out.get('strategy', '')).lower())
+            conf = float(llm_out.get('confidence', 0.0))
+
+            if it:
+                req.intent = it
+            if st:
+                req.strategy = st
+            req.intent_confidence = conf
+            req.intent_candidates = [llm_out.get('intent')]
+
+            # agg fields
+            req.agg_op = llm_out.get('agg_op') or req.agg_op
+            req.agg_field = llm_out.get('agg_field') or req.agg_field
+
+            # filters
+            flt = llm_out.get('filters') or {}
+            if isinstance(flt, dict):
+                if 'duration_days' in flt:
+                    try:
+                        req.filters['duration_days'] = int(flt['duration_days'])
+                    except Exception:
+                        pass
+                if 'region' in flt:
+                    req.filters['region'] = flt['region']
+
+            # If LLM signals very low confidence, fall back to rule-based
+            if req.intent_confidence < 0.3:
+                raise ValueError('LLM low confidence')
+
+            return req
+        except Exception:
+            # fall through to rule-based classifier
+            pass
+
+    # RULE-BASED FALLBACK (existing logic)
     # default confidence (lower than 1 so low-confidence triggers parallel paths)
     req.intent_confidence = 0.6
     req.intent_candidates = []
@@ -184,6 +303,7 @@ def classify(req: QueryRequest) -> QueryRequest:
         req.strategy  = RetrievalStrategy.METADATA
         req.agg_op    = _infer_op(text) or "max"
         req.agg_field = _infer_field(text) or "duration_days"
+        req.top_k     = _extract_top_n(text)
         req.intent_confidence = 0.9
         req.intent_candidates.append('aggregate')
 
