@@ -30,6 +30,7 @@ for _p in (_SRC, _ROOT):
         sys.path.insert(0, _p)
 
 from config.settings import settings
+from understanding.normalization import normalize_title as normalize_title_util
 
 
 class EntityResolver:
@@ -193,23 +194,8 @@ class EntityResolver:
 
     @staticmethod
     def _normalize_title(text: str) -> str:
-        """Lowercase, remove special chars, collapse spaces."""
-        text = text.lower()
-        text = re.sub(r"[^\w\s]", " ", text)   # remove punctuation
-        text = re.sub(r"\s+", " ", text).strip()
-        # Remove generic stop words that appear in many titles
-        # Extend stop-words to exclude very generic location descriptors
-        # (e.g. "base", "camp", "valley") which can cause ambiguous
-        # fuzzy matches across multiple trips.
-        stop = {
-            "trek", "trekking", "the", "with", "and", "via", "to",
-            "from", "by", "in", "of", "a", "an", "days", "day",
-            "base", "camp", "valley", "pass", "lake", "peak",
-            "expedition", "helicopter", "fly", "tour", "shortest",
-            "longest", "short", "long",
-        }
-        words = [w for w in text.split() if w not in stop]
-        return " ".join(words)
+        """Delegate to shared normalization utility."""
+        return normalize_title_util(text)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ class QueryIntent(Enum):
     FILTER    = "filter"     # "Suggest a 5-day trek in Annapurna"
     COMPARE   = "compare"    # "Compare X vs Y"
     SUMMARIZE = "summarize"  # "Describe the full itinerary of X"
-    GENERAL   = "general"    # Catch-all → vector search
+    GENERAL   = "general"    # Company info, booking, health, Nepal facts
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -63,12 +63,11 @@ class QueryRequest:
     # Resolved entity names extracted from the query
     entities:    list[str]         = field(default_factory=list)
 
-    # Classifier confidence (0.0 - 1.0). If low, pipeline may run multiple
-    # retrieval strategies in parallel and ask for disambiguation.
-    intent_confidence: float      = 1.0
+    # Classifier confidence (0.0 - 1.0).
+    intent_confidence: float       = 1.0
 
     # Optional additional intent candidates (for debugging / disambiguation).
-    intent_candidates: list[str]  = field(default_factory=list)
+    intent_candidates: list[str]   = field(default_factory=list)
 
     # Scalar filters for metadata retrieval
     # e.g. {"region": "Annapurna", "duration_days": 7, "beginner_friendly": True}
@@ -83,8 +82,12 @@ class QueryRequest:
     # Optional "top k" hint extracted from queries like "top 3 shortest treks"
     top_k:       int | None        = None
 
+    # ── NEW: Set by LLM classifier — tells pipeline whether to run the
+    # entity resolver. False for general/filter/aggregate queries where
+    # entity matching causes false positives (e.g. "Himalaya views" → company page).
+    needs_entity: bool             = False
+
     def __post_init__(self):
-        # Default normalized to original text if not set
         if not self.normalized:
             self.normalized = self.text
 
@@ -127,7 +130,5 @@ class QueryResponse:
     is_fallback: bool = False
 
     # Clarification / multi-turn support
-    # When True, the pipeline is asking the user to disambiguate their query.
     needs_clarification: bool = False
-    # The clarifying question to present to the user (if any)
     clarification: str | None = None

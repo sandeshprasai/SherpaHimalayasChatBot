@@ -4,6 +4,15 @@ retrieval/metadata.py
 Answers aggregate, filter, and compare queries directly from
 metadata_index.json — no LLM or vector search needed.
 
+KEY CHANGES vs original:
+  - _aggregate() enforces per-field sanity bounds (e.g. altitude 100–9000m)
+    to prevent bad JSON data values (e.g. 19175m) from surfacing as answers.
+  - _filter() is now called only as fallback; the primary filter path goes
+    through HybridRetriever which calls _format_filter_results() directly
+    after vector reranking.
+  - _format_filter_results() is extracted as a public method so HybridRetriever
+    can pass its own already-ranked list.
+
 Usage:
     from retrieval.metadata import MetadataRetriever
     from core.schema import QueryRequest, QueryIntent
@@ -16,7 +25,6 @@ import os
 import sys
 import json
 
-# ── path setup ───────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC  = os.path.abspath(os.path.join(_HERE, ".."))
 _ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
@@ -28,18 +36,28 @@ from config.settings import settings
 from core.schema import QueryRequest, QueryIntent
 
 
+# Sanity bounds for known numeric fields.
+# Any value outside these bounds is treated as a data error and excluded.
+_FIELD_BOUNDS: dict[str, tuple[float, float]] = {
+    "max_altitude_m": (100,  9000),   # Everest summit is 8849m
+    "duration_days":  (1,    365),
+}
+
+
 class MetadataRetriever:
 
     def __init__(self):
-        # Prefer a cleaned metadata index when available (produced by metadata_cleaner)
-        meta_path = settings.cleaned_metadata_index if os.path.exists(settings.cleaned_metadata_index) else settings.metadata_index
+        meta_path = (
+            settings.cleaned_metadata_index
+            if os.path.exists(settings.cleaned_metadata_index)
+            else settings.metadata_index
+        )
         with open(meta_path, encoding="utf-8") as f:
             all_records: list[dict] = json.load(f)
 
-        # Heuristic: determine which records represent destinations (treks/tours/expeditions)
         def _looks_like_destination(rec: dict) -> bool:
-            src = (rec.get("_source") or "").lower()
-            cat = (rec.get("category") or "").lower()
+            src   = (rec.get("_source") or "").lower()
+            cat   = (rec.get("category") or "").lower()
             title = (rec.get("title") or "").lower()
             if src.startswith("destinations/"):
                 return True
@@ -82,59 +100,65 @@ class MetadataRetriever:
         if field == "difficulty":
             return self._aggregate_difficulty(op)
 
-        # Start with records that have a valid scalar for this field
+        # Filter to records with a valid scalar for this field
         candidates = [
             r for r in self._records
             if r.get(field) is not None and r.get(field) != 0
         ]
 
-        # Apply filters from the request (if present). Important: users
-        # asking about "treks" should not get "tours" like rafting.
-        filters = getattr(req, 'filters', {}) or {}
-        if 'category' in filters:
-            cat = str(filters['category']).lower()
-            candidates = [r for r in candidates if (r.get('category') or '').lower() == cat]
-        if 'is_trek' in filters:
-            val = bool(filters['is_trek'])
-            candidates = [r for r in candidates if bool(r.get('is_trek')) == val]
-        if 'region' in filters:
-            region = str(filters['region']).lower()
-            candidates = [r for r in candidates if region in ((r.get('region') or '').lower())]
+        # Apply sanity bounds — reject clearly wrong values
+        lo, hi = _FIELD_BOUNDS.get(field, (float("-inf"), float("inf")))
+        valid_candidates = []
+        for r in candidates:
+            try:
+                val = float(r[field])
+                if lo <= val <= hi:
+                    valid_candidates.append(r)
+            except (TypeError, ValueError):
+                continue
+        candidates = valid_candidates
+
+        # Apply any additional filters from the request
+        filters = getattr(req, "filters", {}) or {}
+        if "category" in filters:
+            cat = str(filters["category"]).lower()
+            candidates = [r for r in candidates if (r.get("category") or "").lower() == cat]
+        if "region" in filters:
+            region = str(filters["region"]).lower()
+            candidates = [r for r in candidates if region in (r.get("region") or "").lower()]
 
         if not candidates:
             return None
 
-        # Support top-k aggregation when requested (e.g., "top 3 shortest treks")
-        top_k = getattr(req, 'top_k', None) or None
+        top_k = getattr(req, "top_k", None) or None
 
         if top_k and isinstance(top_k, int) and top_k > 1:
-            # For difficulty, use the difficulty_rank mapping
-            if field == 'difficulty':
-                rank = settings.difficulty_rank
-                valid = [r for r in candidates if r.get('difficulty') and r['difficulty'].lower() in rank]
-                if not valid:
-                    return None
-                sorted_list = sorted(valid, key=lambda r: rank.get(r['difficulty'].lower(), 99), reverse=(op == 'max'))
-            else:
-                # numeric sort
-                sorted_list = sorted(candidates, key=lambda r: (r.get(field) is None, r.get(field)), reverse=(op == 'max'))
-
+            sorted_list = sorted(
+                candidates,
+                key=lambda r: (r.get(field) is None, r.get(field)),
+                reverse=(op == "max"),
+            )
             top_list = sorted_list[:top_k]
-
-            label = _field_label(field)
-            unit  = _field_unit(field)
-
-            lines = [f"Top {len(top_list)} {label} ({'highest' if op=='max' else 'lowest'}) among matching destinations:\n"]
+            label    = _field_label(field)
+            unit     = _field_unit(field)
+            lines    = [f"Top {len(top_list)} by {label} ({'highest' if op == 'max' else 'lowest'}):\n"]
             for i, r in enumerate(top_list, 1):
-                val = r.get(field)
-                val_str = str(val) + unit if val is not None else 'N/A'
+                val     = r.get(field)
+                val_str = str(val) + unit if val is not None else "N/A"
                 lines.append(
-                    f"{i}. **{r.get('title')}** — {val_str}\n   - Region: {r.get('region','N/A')}\n   - Difficulty: {r.get('difficulty','N/A')}\n   - {(r.get('summary') or '')[:140]}…\n"
+                    f"{i}. **{r.get('title')}** — {val_str}\n"
+                    f"   - Region: {r.get('region', 'N/A')}\n"
+                    f"   - Difficulty: {r.get('difficulty', 'N/A')}\n"
+                    f"   - {(r.get('summary') or '')[:140]}…\n"
                 )
             return "\n".join(lines)
 
-        # Default single-winner behavior
-        winner = max(candidates, key=lambda r: r[field]) if op == "max" else min(candidates, key=lambda r: r[field])
+        # Single winner
+        winner = (
+            max(candidates, key=lambda r: r[field])
+            if op == "max"
+            else min(candidates, key=lambda r: r[field])
+        )
 
         adj   = _op_adjective(op, field)
         label = _field_label(field)
@@ -151,7 +175,7 @@ class MetadataRetriever:
         )
 
     def _aggregate_difficulty(self, op: str) -> str | None:
-        rank = settings.difficulty_rank
+        rank  = settings.difficulty_rank
         valid = [
             r for r in self._records
             if r.get("difficulty") and r["difficulty"].lower() in rank
@@ -160,9 +184,8 @@ class MetadataRetriever:
             return None
 
         key_fn = lambda r: rank.get(r["difficulty"].lower(), 99)
-        winner = min(valid, key=key_fn) if op == "min" \
-            else max(valid, key=key_fn)
-        adj = "easiest" if op == "min" else "most difficult"
+        winner = min(valid, key=key_fn) if op == "min" else max(valid, key=key_fn)
+        adj    = "easiest" if op == "min" else "most difficult"
 
         return (
             f"**{winner['title']}** is the {adj} option available.\n\n"
@@ -173,33 +196,23 @@ class MetadataRetriever:
         )
 
     # ──────────────────────────────────────────────────────────────────────
-    # FILTER
+    # FILTER  (used as fallback when HybridRetriever is unavailable)
     # ──────────────────────────────────────────────────────────────────────
 
     def _filter(self, req: QueryRequest) -> str:
         records = list(self._records)
         filters = req.filters
 
-        # Category
         if cat := filters.get("category"):
-            records = [
-                r for r in records
-                if (r.get('category') or '').lower() == str(cat).lower()
-            ]
+            records = [r for r in records if (r.get("category") or "").lower() == str(cat).lower()]
 
-        # is_trek flag
-        if filters.get('is_trek') is not None:
-            val = bool(filters.get('is_trek'))
-            records = [r for r in records if bool(r.get('is_trek')) == val]
+        if filters.get("is_trek") is not None:
+            val     = bool(filters.get("is_trek"))
+            records = [r for r in records if bool(r.get("is_trek")) == val]
 
-        # Region
         if region := filters.get("region"):
-            records = [
-                r for r in records
-                if region.lower() in (r.get("region") or "").lower()
-            ]
+            records = [r for r in records if region.lower() in (r.get("region") or "").lower()]
 
-        # Duration  (±3 day tolerance, and exclude 0-day records)
         if days := filters.get("duration_days"):
             records = [
                 r for r in records
@@ -208,13 +221,9 @@ class MetadataRetriever:
                 and abs(r["duration_days"] - days) <= 3
             ]
 
-        # Beginner-friendly
         if filters.get("beginner_friendly"):
             friendly = {"easy", "moderate", "easy/moderate"}
-            records = [
-                r for r in records
-                if (r.get("difficulty") or "").lower() in friendly
-            ]
+            records  = [r for r in records if (r.get("difficulty") or "").lower() in friendly]
 
         if not records:
             return (
@@ -224,7 +233,29 @@ class MetadataRetriever:
             )
 
         records.sort(key=lambda r: r.get("duration_days") or 999)
-        top = records[:5]
+        limit = req.top_k or 5
+        return self._format_filter_results(records[:limit], len(records), limit)
+
+    # ──────────────────────────────────────────────────────────────────────
+    # FORMAT FILTER RESULTS  (called by both _filter and HybridRetriever)
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _format_filter_results(
+        self,
+        top: list[dict],
+        total: int,
+        limit: int,
+    ) -> str:
+        """
+        Format a list of already-ranked records into a display string.
+        Called by _filter() (metadata-only path) and HybridRetriever (after
+        vector reranking).
+        """
+        if not top:
+            return (
+                f"I couldn't find any trips matching those criteria. "
+                f"Contact us at **{settings.company_email}** for a custom itinerary."
+            )
 
         lines = [
             f"Here are {len(top)} option{'s' if len(top) > 1 else ''} "
@@ -241,9 +272,10 @@ class MetadataRetriever:
                 f"   - {(r.get('summary') or '')[:120]}…\n"
             )
 
-        if len(records) > 5:
+        remaining = total - len(top)
+        if remaining > 0:
             lines.append(
-                f"\n*{len(records) - 5} more option(s) available — "
+                f"\n*{remaining} more option(s) available — "
                 f"ask for more details or narrow your criteria.*"
             )
 
@@ -292,12 +324,11 @@ class MetadataRetriever:
     # ──────────────────────────────────────────────────────────────────────
 
     def _fuzzy_find(self, name: str) -> dict | None:
-        name_lower = name.lower().strip()
+        name_lower  = name.lower().strip()
         best, best_score = None, 0.0
 
         for r in self._records:
-            title = (r.get("title") or "").lower()
-            # Word overlap score
+            title       = (r.get("title") or "").lower()
             name_words  = set(w for w in name_lower.split() if len(w) > 3)
             title_words = set(w for w in title.split()      if len(w) > 3)
             if not title_words:
@@ -305,7 +336,7 @@ class MetadataRetriever:
             overlap = len(name_words & title_words) / len(title_words)
             if overlap > best_score:
                 best_score = overlap
-                best = r
+                best       = r
 
         return best if best_score >= 0.4 else None
 

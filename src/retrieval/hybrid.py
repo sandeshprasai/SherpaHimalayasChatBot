@@ -3,22 +3,16 @@ retrieval/hybrid.py
 ────────────────────
 Hybrid retrieval: metadata pre-filter → vector rerank.
 
-Used for FILTER / recommendation queries where the user specifies
-constraints (region, duration, difficulty) AND wants semantically
-relevant results within those constraints.
-
-Flow:
-  1. MetadataRetriever filters the flat index by scalar constraints
-     → returns candidate record IDs
-  2. VectorRetriever runs semantic search on the full query
-     → returns top-k chunks
-  3. Hybrid merges: only keep vector results whose doc ID
-     appears in the metadata candidates
-  4. Falls back to metadata-only results if vector finds nothing
+KEY CHANGES vs original:
+  - Filter results are reranked by vector semantic score, not sorted by
+    duration. So "5 treks with beautiful Himalaya views" returns semantically
+    matched results, not just the 5 shortest treks alphabetically.
+  - req.top_k is honored (extracted by LLM classifier from "find me 5" etc.)
+  - Falls back to metadata-only listing if vector retriever is unavailable.
 
 Usage:
     from retrieval.hybrid import HybridRetriever
-    from core.schema import QueryRequest, QueryIntent, RetrievalStrategy
+    from core.schema import QueryRequest
 
     retriever = HybridRetriever()
     nodes, answer = retriever.search(req)
@@ -27,7 +21,6 @@ Usage:
 import os
 import sys
 
-# ── path setup ───────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC  = os.path.abspath(os.path.join(_HERE, ".."))
 _ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
@@ -46,7 +39,6 @@ class HybridRetriever:
     """
 
     def __init__(self):
-        # Lazy imports — heavy deps loaded on first search()
         self._meta = None
         self._vec  = None
 
@@ -62,31 +54,49 @@ class HybridRetriever:
         """
         Returns (source_nodes, metadata_answer).
 
-        - source_nodes: vector chunks filtered to metadata candidates
-          (used as LLM context if metadata_answer is None)
-        - metadata_answer: pre-formatted string from metadata layer
-          (not None when metadata alone is sufficient — e.g. filter listing)
+        Flow:
+          1. Apply scalar filters from req.filters (region, duration, difficulty)
+          2. Run vector search on the full query
+          3. Rerank filtered candidates by vector semantic score
+          4. Format the top-k reranked results as the metadata_answer string
         """
         self._ensure_ready()
-        k = top_k or settings.similarity_top_k
 
-        # ── Step 1: metadata filter ────────────────────────────────────────
-        candidate_ids = self._get_candidate_ids(req)
-        meta_answer   = self._meta.answer(req)    # may be a formatted listing
+        # Honor top_k extracted by classifier ("find me 5", "top 3") with
+        # a default of 5 when not specified.
+        limit = req.top_k or top_k or 5
 
-        # ── Step 2: vector search ──────────────────────────────────────────
-        vec_nodes = self._vec.search(req.normalized or req.text, top_k=k * 2)
+        # ── Step 1: Apply scalar filters from req.filters ─────────────────
+        candidates = self._apply_filters(req)
 
-        # ── Step 3: rerank — prefer nodes whose doc is in candidates ───────
-        if candidate_ids:
-            prioritized = [n for n in vec_nodes if n.source_id in candidate_ids]
-            remainder   = [n for n in vec_nodes if n.source_id not in candidate_ids]
-            merged = (prioritized + remainder)[:k]
-        else:
-            # No scalar constraints → just return top-k vector results
-            merged = vec_nodes[:k]
+        # ── Step 2: Vector-rerank filtered candidates ─────────────────────
+        query_text = req.normalized or req.text
+        try:
+            # Fetch enough candidates for reranking
+            fetch_k   = max(limit * 4, 20)
+            vec_nodes = self._vec.search(query_text, top_k=fetch_k)
 
-        return merged, meta_answer
+            # Build title → score map from vector results
+            score_map: dict[str, float] = {}
+            for n in vec_nodes:
+                title = (n.title or "").lower().strip()
+                if title and title not in score_map:
+                    score_map[title] = n.score or 0.0
+
+            # Sort candidates by vector semantic score (descending)
+            candidates.sort(
+                key=lambda r: score_map.get((r.get("title") or "").lower().strip(), 0.0),
+                reverse=True,
+            )
+        except Exception:
+            # Vector unavailable — fall back to duration sort (original behavior)
+            candidates.sort(key=lambda r: r.get("duration_days") or 999)
+
+        # ── Step 3: Take top-k reranked and format answer ─────────────────
+        top          = candidates[:limit]
+        meta_answer  = self._meta._format_filter_results(top, len(candidates), limit)
+
+        return [], meta_answer
 
     # ──────────────────────────────────────────────────────────────────────
     # PRIVATE
@@ -100,16 +110,13 @@ class HybridRetriever:
         self._meta = MetadataRetriever()
         self._vec  = VectorRetriever()
 
-    def _get_candidate_ids(self, req: QueryRequest) -> set[str]:
+    def _apply_filters(self, req: QueryRequest) -> list[dict]:
         """
-        Run metadata filters and return matching document IDs.
-        Returns empty set if no scalar filters are set.
+        Apply scalar filters from req.filters to the metadata records.
+        Returns all matching records (no limit applied here).
         """
-        filters = req.filters
-        if not filters:
-            return set()
-
         records = list(self._meta._records)
+        filters = req.filters
 
         if region := filters.get("region"):
             records = [
@@ -121,7 +128,8 @@ class HybridRetriever:
             records = [
                 r for r in records
                 if r.get("duration_days") is not None
-                and abs(r["duration_days"] - days) <= 2
+                and r["duration_days"] > 0
+                and abs(r["duration_days"] - days) <= 3
             ]
 
         if filters.get("beginner_friendly"):
@@ -131,4 +139,10 @@ class HybridRetriever:
                 if (r.get("difficulty") or "").lower() in friendly
             ]
 
-        return {r["id"] for r in records if r.get("id")}
+        if cat := filters.get("category"):
+            records = [
+                r for r in records
+                if (r.get("category") or "").lower() == str(cat).lower()
+            ]
+
+        return records

@@ -17,113 +17,27 @@ RAG_DIR = os.path.join(BASE, "data", "rag_ready")
 OUT = os.path.join(RAG_DIR, "metadata_index.cleaned.json")
 ORIG = os.path.join(RAG_DIR, "metadata_index.json")
 
-# Stop-words used for normalizing titles (for grouping)
-STOPWORDS_NORM = {
-    "trek", "trekking", "the", "with", "and", "via", "to",
-    "from", "by", "in", "of", "a", "an", "days", "day",
-    "base", "camp", "valley", "pass", "lake", "peak",
-    "expedition", "helicopter", "fly", "tour", "shortest",
-    "longest", "short", "long",
-}
+import sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_SRC = os.path.abspath(os.path.join(_HERE, ".."))
+_ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
+for _p in (_SRC, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-# Words to exclude when generating abbreviations (we want meaningful initials)
-ABBR_EXCLUDE = {"the", "and", "of", "in", "to", "by", "from", "a", "an", "trek", "trekking"}
+from understanding.normalization import (
+    STOPWORDS_NORM,
+    ABBR_EXCLUDE,
+    REGION_KEYWORDS,
+    parse_int,
+    canonical_difficulty,
+    normalize_title,
+    abbrev,
+    find_duration,
+    find_altitude,
+    infer_region,
+)
 
-REGION_KEYWORDS = [
-    "annapurna", "everest", "langtang", "manaslu", "mustang",
-    "kanchenjunga", "dolpa", "makalu", "rolwaling", "helambu",
-    "pokhara", "nepal", "tsum",
-]
-
-
-def parse_int(x):
-    if x is None:
-        return None
-    if isinstance(x, int):
-        return x
-    if isinstance(x, float):
-        return int(x)
-    if isinstance(x, str):
-        m = re.search(r"(\d+)", x)
-        if m:
-            return int(m.group(1))
-    try:
-        return int(x)
-    except Exception:
-        return None
-
-
-def canonical_difficulty(s):
-    if not s:
-        return None
-    s = str(s).lower()
-    if "easy/moderate" in s or ("easy" in s and "moderate" in s):
-        return "Easy/Moderate"
-    if "easy" in s and "moderate" not in s:
-        return "Easy"
-    if "moderate" in s:
-        return "Moderate"
-    if "challeng" in s or "hard" in s:
-        return "Challenging"
-    if "stren" in s:
-        return "Strenuous"
-    if "extreme" in s:
-        return "Extreme"
-    return s.capitalize()
-
-
-def normalize_title(text: str) -> str:
-    if not text:
-        return ""
-    t = text.lower()
-    t = re.sub(r"[^a-z0-9\s]", " ", t)
-    parts = [w for w in t.split() if w not in STOPWORDS_NORM]
-    return " ".join(parts).strip()
-
-
-def abbrev(title: str) -> str | None:
-    if not title:
-        return None
-    toks = [w for w in re.split(r"\W+", title) if w and w.lower() not in ABBR_EXCLUDE]
-    if not toks:
-        return None
-    a = ''.join(w[0].upper() for w in toks)
-    return a if 2 <= len(a) <= 6 else None
-
-
-def find_duration(text: str) -> int | None:
-    if not text:
-        return None
-    # look for patterns like '16 days', '4-day', 'duration: 10 days'
-    m = re.search(r"(\d{1,2})\s*(?:-\s*)?(?:days|day)\b", text, flags=re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    m = re.search(r"duration[:\s]*(\d{1,2})", text, flags=re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    return None
-
-
-def find_altitude(text: str) -> int | None:
-    if not text:
-        return None
-    m = re.search(r"(\d{3,4})\s*(?:m|meters|metres)\b", text, flags=re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    m = re.search(r"max\s+altitude[:\s]*(\d{3,4})", text, flags=re.IGNORECASE)
-    if m:
-        return int(m.group(1))
-    return None
-
-
-def infer_region(text: str) -> str | None:
-    if not text:
-        return None
-    tl = text.lower()
-    for r in REGION_KEYWORDS:
-        if r in tl:
-            return " ".join(w.capitalize() for w in r.split())
-    return None
 
 
 def scan_rag_ready():
@@ -174,18 +88,40 @@ def scan_rag_ready():
             tdata['summary'] = data.get('summary') or (data.get('metadata') or {}).get('summary') or ''
             tdata['itinerary'] = data.get('itinerary') or (data.get('metadata') or {}).get('itinerary') or []
 
-            # category detection
+            # category detection (enhanced)
             typ = (data.get('category') or (data.get('metadata') or {}).get('category') or '')
             typ_lower = str(typ).lower()
             title_lower = (tdata['title'] or '').lower()
-            if 'helicopter' in title_lower or 'helicopter' in typ_lower or 'fly' in typ_lower or 'tour' in typ_lower:
-                cat = 'tour'
-            elif 'expedition' in typ_lower or 'peak' in typ_lower or 'climb' in typ_lower or 'peak' in title_lower:
-                cat = 'expedition'
-            elif 'trek' in title_lower or 'trek' in typ_lower:
-                cat = 'trek'
-            else:
+            summary = data.get('summary') or (data.get('metadata') or {}).get('summary') or ''
+            summary_lower = str(summary).lower()
+
+            # keyword sets
+            tour_keywords = ('helicopter', 'fly', 'tour', 'rafting', 'raft', 'safari', 'kayak', 'kayaking', 'whitewater', 'city tour', 'sightseeing', 'package', 'activity')
+            expedition_keywords = ('expedition', 'peak', 'climb', 'summit', 'mount')
+            trek_keywords = ('trek', 'trekking', 'circuit', 'trail', 'valley', 'pass', 'la pass', 'route')
+
+            cat = None
+            # explicit category provided
+            if typ_lower in ('trek', 'trekking', 'tour', 'expedition', 'info', 'package', 'activity'):
+                cat = 'trek' if typ_lower == 'trekking' else typ_lower
+
+            # heuristics on title and summary
+            if not cat:
+                if any(k in title_lower or k in summary_lower for k in tour_keywords):
+                    cat = 'tour'
+                elif any(k in title_lower or k in summary_lower for k in expedition_keywords):
+                    cat = 'expedition'
+                elif any(k in title_lower or k in summary_lower for k in trek_keywords):
+                    cat = 'trek'
+
+            # normalize fallback
+            if not cat:
                 cat = typ_lower or 'info'
+
+            # ensure rafting/kayak words force 'tour'
+            if any(k in title_lower or k in summary_lower for k in ('rafting','raft','kayak','safari','whitewater')):
+                cat = 'tour'
+
             tdata['category'] = cat
 
             tdata['_source'] = os.path.relpath(fpath, BASE).replace('\\', '/')
@@ -252,14 +188,31 @@ def dedupe_and_canonicalize(records: list[dict]) -> list[dict]:
             slug = re.sub(r"[^a-z0-9]+", '-', (merged_rec.get('title') or '').lower()).strip('-')
             merged_rec['id'] = slug or merged_rec.get('title')
 
-        # beginner friendly boolean
-        diff = merged_rec.get('difficulty') or ''
-        merged_rec['beginner_friendly'] = True if diff and diff.lower() in ('easy', 'moderate', 'easy/moderate', 'easy/moderate'.lower()) else False
+        # canonical category normalization and flags
+        cat = (merged_rec.get('category') or '').strip().lower()
+        if cat == 'trekking':
+            cat = 'trek'
+        allowed = {'trek', 'tour', 'expedition', 'info'}
+        if cat not in allowed:
+            title_s = (merged_rec.get('canonical_title') or merged_rec.get('title') or '').lower()
+            summary_s = (merged_rec.get('summary') or '').lower()
+            if any(k in title_s or k in summary_s for k in ('rafting','raft','safari','kayak','whitewater','tour','package','city tour','sightseeing')):
+                cat = 'tour'
+            elif any(k in title_s or k in summary_s for k in ('expedition','peak','climb','summit')):
+                cat = 'expedition'
+            elif any(k in title_s or k in summary_s for k in ('trek','trekking','circuit','trail','valley','pass','la pass')):
+                cat = 'trek'
+            else:
+                cat = 'info'
+        merged_rec['category'] = cat
+        merged_rec['canonical_category'] = cat
+        merged_rec['is_trek'] = cat == 'trek'
+        merged_rec['is_tour'] = cat == 'tour'
+        merged_rec['is_expedition'] = cat == 'expedition'
 
-        # explicit flags
-        merged_rec['is_trek'] = merged_rec.get('category') == 'trek'
-        merged_rec['is_tour'] = merged_rec.get('category') == 'tour'
-        merged_rec['is_expedition'] = merged_rec.get('category') == 'expedition'
+        # beginner friendly boolean
+        diff = (merged_rec.get('difficulty') or '').lower()
+        merged_rec['beginner_friendly'] = diff in ('easy', 'moderate', 'easy/moderate')
 
         # ensure types
         if isinstance(merged_rec.get('duration_days'), float):
