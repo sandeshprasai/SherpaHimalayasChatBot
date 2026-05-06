@@ -1,134 +1,65 @@
-"""
-core/schema.py
-──────────────
-Dataclasses that flow through the entire pipeline.
-
-    QueryRequest  →  pipeline  →  QueryResponse
-
-Nothing here imports from other src modules — this is the
-foundation every other module imports from.
-"""
-
+# --- FILE: src/core/schema.py ---
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# QUERY INTENT  (what kind of question is being asked?)
-# ──────────────────────────────────────────────────────────────────────────────
-
 class QueryIntent(Enum):
-    LOOKUP    = "lookup"     # "What is the duration of X?"
-    AGGREGATE = "aggregate"  # "Which trek has the highest altitude?"
-    FILTER    = "filter"     # "Suggest a 5-day trek in Annapurna"
-    COMPARE   = "compare"    # "Compare X vs Y"
-    SUMMARIZE = "summarize"  # "Describe the full itinerary of X"
-    GENERAL   = "general"    # Company info, booking, health, Nepal facts
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# RETRIEVAL STRATEGY  (which retriever should answer it?)
-# ──────────────────────────────────────────────────────────────────────────────
+    LOOKUP    = "lookup"
+    AGGREGATE = "aggregate"
+    FILTER    = "filter"
+    COMPARE   = "compare"
+    SUMMARIZE = "summarize"
+    GENERAL   = "general"
 
 class RetrievalStrategy(Enum):
-    VECTOR   = "vector"    # semantic similarity search
-    METADATA = "metadata"  # flat index filter/sort
-    HYBRID   = "hybrid"    # metadata filter → vector rerank
-    FULL_DOC = "full_doc"  # fetch entire document by entity name
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# QUERY REQUEST  (input to the pipeline)
-# ──────────────────────────────────────────────────────────────────────────────
+    VECTOR   = "vector"
+    METADATA = "metadata"
+    HYBRID   = "hybrid"
+    FULL_DOC = "full_doc"
 
 @dataclass
 class QueryRequest:
-    """
-    Raw user query plus all understanding-layer annotations.
-    Populated progressively as the query passes through the pipeline.
-    """
-
-    # ── Raw input ──────────────────────────────────────────────────────────
-    text:        str                        # original user message
-
-    # ── Understanding layer fills these in ────────────────────────────────
+    text:        str
     intent:      QueryIntent       = QueryIntent.GENERAL
     strategy:    RetrievalStrategy = RetrievalStrategy.VECTOR
-
-    # Normalised query text (e.g. "EBC" → "Everest Base Camp Trek")
     normalized:  str               = ""
-
-    # Resolved entity names extracted from the query
-    entities:    list[str]         = field(default_factory=list)
-
-    # Classifier confidence (0.0 - 1.0).
+    entities:    list[Any]         = field(default_factory=list) # Changed to Any to support dicts
     intent_confidence: float       = 1.0
-
-    # Optional additional intent candidates (for debugging / disambiguation).
-    intent_candidates: list[str]   = field(default_factory=list)
-
-    # Scalar filters for metadata retrieval
-    # e.g. {"region": "Annapurna", "duration_days": 7, "beginner_friendly": True}
     filters:     dict[str, Any]    = field(default_factory=dict)
-
-    # Aggregate operation hint  ("max" | "min")
     agg_op:      str | None        = None
-
-    # Field to aggregate on  ("duration_days" | "max_altitude_m" | "difficulty")
     agg_field:   str | None        = None
-
-    # Optional "top k" hint extracted from queries like "top 3 shortest treks"
     top_k:       int | None        = None
-
-    # ── NEW: Set by LLM classifier — tells pipeline whether to run the
-    # entity resolver. False for general/filter/aggregate queries where
-    # entity matching causes false positives (e.g. "Himalaya views" → company page).
     needs_entity: bool             = False
 
     def __post_init__(self):
         if not self.normalized:
             self.normalized = self.text
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# SOURCE NODE  (one retrieved chunk / record)
-# ──────────────────────────────────────────────────────────────────────────────
+# --- ADD THIS CLASS ---
+@dataclass
+class RoutingDecision:
+    strategy:         RetrievalStrategy
+    use_metadata:     bool = False
+    use_full_doc:     bool = False
+    use_vector:       bool = True
+    metadata_only:    bool = False
+    reason:           str  = ""
 
 @dataclass
 class SourceNode:
-    """A single piece of retrieved context."""
     text:       str
-    score:      float | None  = None   # similarity score (vector) or None (metadata)
-    source_id:  str | None    = None   # document id
-    title:      str | None    = None   # human-readable title
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# QUERY RESPONSE  (output of the pipeline)
-# ──────────────────────────────────────────────────────────────────────────────
+    score:      float | None  = None
+    source_id:  str | None    = None
+    title:      str | None    = None
 
 @dataclass
 class QueryResponse:
-    """
-    Final response returned to the API / chat loop.
-    """
-    answer:    str                        # text shown to the user
+    answer:    str
     intent:    QueryIntent = QueryIntent.GENERAL
     strategy:  RetrievalStrategy = RetrievalStrategy.VECTOR
     sources:   list[SourceNode] = field(default_factory=list)
-
-    # Token accounting
     tokens_used: int   = 0
     cost_usd:    float = 0.0
-
-    # Was this answered by metadata (no LLM call) or required LLM?
     used_llm:  bool = True
-
-    # True if we hit the fallback (LLM couldn't answer from context)
     is_fallback: bool = False
-
-    # Clarification / multi-turn support
-    needs_clarification: bool = False
-    clarification: str | None = None

@@ -153,21 +153,12 @@ class VectorRetriever:
         )
 
     def _load_documents(self):
-        """
-        Build LlamaIndex Document objects from all rag_ready JSONs.
-        Handles both trek/expedition records AND company/team/info/blog records.
-        Skips any file that cannot be parsed as a dict.
-        """
         from llama_index.core import Document
-
         documents = []
-        skipped   = []
 
         for root, _, files in os.walk(settings.rag_ready_dir):
             for fname in sorted(files):
-                if not fname.endswith(".json"):
-                    continue
-                if fname in ("metadata_index.json",):
+                if not fname.endswith(".json") or fname == "metadata_index.json":
                     continue
 
                 fpath = os.path.join(root, fname)
@@ -175,44 +166,27 @@ class VectorRetriever:
                     with open(fpath, encoding="utf-8") as f:
                         data = json.load(f)
 
-                    # Handle list-rooted files — find the first dict in the list
-                    if isinstance(data, list):
-                        data = next(
-                            (item for item in data if isinstance(item, dict)),
-                            None,
+                    # GENERALIZED: Process everything as a list
+                    items = data if isinstance(data, list) else [data]
+
+                    for item in items:
+                        if not isinstance(item, dict) or not item.get("title"):
+                            continue
+                        
+                        text = self._build_text(item)
+                        doc = Document(
+                            text=text,
+                            metadata={
+                                "id":             item.get("id", ""),
+                                "title":          item.get("title", ""),
+                                "type":           item.get("type", "trek"),
+                                "category":       item.get("category", ""),
+                                "duration_days":  item.get("duration_days"),
+                            },
                         )
-                    if not isinstance(data, dict) or not data:
-                        skipped.append(fname)
-                        continue
-
-                    text = self._build_text(data)
-                    if not text.strip():
-                        skipped.append(fname)
-                        continue
-
-                    doc = Document(
-                        text=text,
-                        metadata={
-                            "id":             data.get("id", ""),
-                            "title":          data.get("title", ""),
-                            "type":           data.get("type", ""),
-                            "category":       data.get("category", ""),
-                            "region":         data.get("region", ""),
-                            "duration_days":  data.get("duration_days"),
-                            "difficulty":     data.get("difficulty", ""),
-                            "max_altitude_m": data.get("max_altitude_m"),
-                        },
-                    )
-                    documents.append(doc)
-
+                        documents.append(doc)
                 except Exception as e:
-                    skipped.append(fname)
                     print(f"  ⚠️  Skipping {fname}: {e}")
-
-        print(
-            f"✅ Loaded {len(documents)} documents"
-            + (f" ({len(skipped)} skipped)" if skipped else "")
-        )
         return documents
 
     @staticmethod
