@@ -59,6 +59,14 @@ class MetadataRetriever:
             src   = (rec.get("_source") or "").lower()
             cat   = (rec.get("category") or "").lower()
             title = (rec.get("title") or "").lower()
+            typ   = (rec.get("type") or "").lower()
+
+            # Explicitly exclude non-destination types
+            if typ in ("team", "company", "blog", "info"):
+                return False
+            if src.startswith(("team/", "company/", "blogs/", "information/")):
+                return False
+
             if src.startswith("destinations/"):
                 return True
             if any(k in cat for k in ("trek", "expedition", "tour", "peak")):

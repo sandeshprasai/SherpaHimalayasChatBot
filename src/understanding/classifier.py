@@ -80,7 +80,12 @@ Respond ONLY with a valid JSON object — no markdown, no explanation:
 }}
 
 Intent definitions:
-- aggregate : superlative questions — highest, shortest, easiest, longest, most popular
+- aggregate : superlative questions — highest, shortest, easiest, longest, most popular.
+              Examples: "find me the shortest trek", "which has the highest altitude",
+              "what is the easiest destination". Key signal: ONE winner is expected.
+- filter    : listing/recommendation with multiple results expected.
+              Examples: "find me 3 treks", "suggest easy treks", "what treks are available".
+              Key signal: user wants a LIST, not a single best answer.
 - compare   : two specific destinations being compared (vs, versus, difference between)
 - filter    : recommendation or listing — suggest, find me N, best for X, show me options
 - summarize : request for a full itinerary or complete step-by-step description of ONE destination
