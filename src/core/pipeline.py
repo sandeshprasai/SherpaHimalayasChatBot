@@ -1,10 +1,8 @@
 import os
 import json
+from typing import Any, List, Optional # <--- FIXED: Added Any here
 from config.settings import settings
-from core.schema import (
-    QueryRequest, QueryResponse,
-    QueryIntent, RetrievalStrategy, SourceNode, RoutingDecision 
-)
+from core.schema import QueryRequest, QueryResponse, SourceNode, RoutingDecision
 from core.router import Router
 from understanding.normalizer import normalize
 from understanding.classifier import classify
@@ -25,137 +23,100 @@ class Pipeline:
         self._used_tokens = 0
 
     def run(self, user_query: str) -> QueryResponse:
-        """
-        The single, unified entry point for the pipeline.
-        """
-        # 1. Normalize and Classify
+        # 1. Normalize and Classify (Generates data_plan)
         normalized = normalize(user_query)
         req = QueryRequest(text=user_query, normalized=normalized)
         classify(req)
         
-        # 2. Resolve entities if the classifier says we need them
+        # 2. Resolve entities if needed
         if req.needs_entity:
             req.entities = self._resolver.resolve(normalized)
-        else:
-            req.entities = []
-
+        
         # 3. Route the request
         decision = self._router.route(req)
-        self._log(f"Routing: {decision.reason}")
+        self._log(f"Routing Decision: {decision.reason}")
 
         source_nodes = []
-        meta_answer = None
-
-        # 4. Retrieval logic based on Router decision
-        if decision.use_metadata and not decision.use_vector:
+        
+        # 4. Retrieval based on the Plan
+        # If the LLM data_plan has filters or sorts, use Metadata Engine
+        plan = getattr(req, 'data_plan', {})
+        
+        if plan.get("filters") or plan.get("sort"):
             try:
-                meta_answer = self._get_meta().answer(req)
-            except Exception as e: 
-                self._log(f"Meta failed: {e}")
+                raw_results = self._get_meta().execute_plan(plan)
+                source_nodes = [
+                    SourceNode(
+                        text=self._universal_formatter(r), 
+                        title=r.get("title")
+                    ) for r in raw_results
+                ]
+            except Exception as e:
+                self._log(f"Metadata execution failed: {e}")
 
-        elif decision.use_metadata and decision.use_vector:
-            try:
-                # Hybrid search
-                source_nodes, _ = self._get_hybrid().search(req)
-            except Exception as e: 
-                self._log(f"Hybrid failed: {e}")
-
-        elif decision.use_full_doc:
-            doc_text = self._fetch_full_doc(req)
-            if doc_text:
-                source_nodes = [SourceNode(text=doc_text, title="Itinerary")]
-
-        else:
+        # 5. Semantic Fallback (Vector Search)
+        # If metadata found nothing or it's a general question, use Vector
+        if not source_nodes:
             try:
                 source_nodes = self._get_vec().search(normalized)
-            except Exception as e: 
-                self._log(f"Vector failed: {e}")
+            except Exception as e:
+                self._log(f"Vector search failed: {e}")
 
-        # 5. Entity Injection Fallback (Fix 5b)
-        # If we have specific entities, we inject their full data sheets into the LLM context.
-        # This ensures the LLM has all the facts even if vector search was fuzzy.
+        # 6. Entity Injection (Guarantee specific data is present)
         if req.entities:
-            injected_nodes = []
             for ent in req.entities:
-                # Check if this entity's title is already represented in source_nodes
                 if not any(n.title == ent.get("title") for n in source_nodes):
-                    injected_nodes.append(SourceNode(
-                        text=self._format_full_doc(ent),
+                    source_nodes.insert(0, SourceNode(
+                        text=self._universal_formatter(ent),
                         title=ent.get("title")
                     ))
-            # Put injected high-quality metadata at the front of the context
-            source_nodes = injected_nodes + source_nodes
-            self._log(f"Injected {len(injected_nodes)} entity records into context.")
 
-        # 6. Check for Metadata-Only exit
-        if decision.metadata_only and meta_answer:
-            return QueryResponse(answer=meta_answer, intent=req.intent, used_llm=False)
+        # 7. LLM Generation
+        if not source_nodes:
+            return QueryResponse(answer=FALLBACK_MESSAGE, is_fallback=True)
 
-        # 7. Check for Fallback (No context found)
-        if not source_nodes and not meta_answer:
-            return QueryResponse(answer=FALLBACK_MESSAGE, intent=req.intent, is_fallback=True, used_llm=False)
-
-        # 8. LLM Generation
         prompt = self._builder.build(req, source_nodes)
         gen = self._get_generator()
-        
-        # Token Budget Check
-        estimated = gen.count_tokens(user_query) + settings.estimated_resp_tokens
-        if self._used_tokens + estimated > settings.daily_token_limit:
-            return QueryResponse(answer="🚫 Daily token limit reached.", is_fallback=True, used_llm=False)
-
         answer, tokens = gen.generate(prompt)
         self._used_tokens += tokens
 
         return QueryResponse(
-            answer=answer, 
-            intent=req.intent, 
-            sources=source_nodes, 
-            tokens_used=tokens, 
-            used_llm=True, 
+            answer=answer,
+            sources=source_nodes,
+            tokens_used=tokens,
             is_fallback=gen.is_fallback(answer)
         )
 
-    def _fetch_full_doc(self, req: QueryRequest) -> str | None:
-        """Helper to get the first resolved entity as a full text block."""
-        if not req.entities: 
-            return None
-        return self._format_full_doc(req.entities[0])
-
     @staticmethod
-    def _format_full_doc(data: dict) -> str:
-        """
-        Generalized formatter: Loops through all JSON keys to build LLM context.
-        """
-        if not isinstance(data, dict): 
-            return "Data unavailable."
-            
-        lines = [f"TITLE: {data.get('title', 'Unknown')}"]
+    def _universal_formatter(data: Any, depth=0) -> str:
+        """Recursively flattens ANY dictionary or list into a readable string."""
+        if not isinstance(data, (dict, list)):
+            return str(data)
+
+        lines = []
+        prefix = "  " * depth
         
-        # Internal keys to skip
-        blacklist = ["_source", "id", "aliases", "embedding_chunks"]
-
-        for key, value in data.items():
-            if key in blacklist or not value:
-                continue
-            
-            label = key.replace("_", " ").upper()
-            
-            if isinstance(value, list):
-                # Highlights, Inclusions, Tags
-                lines.append(f"{label}: {', '.join(map(str, value))}")
-            elif isinstance(value, dict):
-                continue # Nested dicts handled below for itinerary
-            else:
-                lines.append(f"{label}: {value}")
-
-        # Specific formatting for Itinerary
-        if "itinerary" in data:
-            lines.append("ITINERARY:")
-            for d in data["itinerary"]:
-                if isinstance(d, dict):
-                    lines.append(f"  Day {d.get('day', '?')}: {d.get('title', '')} - {d.get('description', '')}")
-
+        if isinstance(data, dict):
+            for k, v in data.items():
+                # Skip heavy/internal fields
+                if k in ["_source", "id", "embedding_chunks", "aliases"]: 
+                    continue
+                
+                label = f"{prefix}{k.replace('_', ' ').upper()}:"
+                
+                if isinstance(v, (dict, list)):
+                    lines.append(f"{label}")
+                    lines.append(Pipeline._universal_formatter(v, depth + 1))
+                else:
+                    lines.append(f"{label} {v}")
+        
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, (dict, list)):
+                    lines.append(Pipeline._universal_formatter(item, depth + 1))
+                else:
+                    lines.append(f"{prefix}- {item}")
+                    
         return "\n".join(lines)
 
     # ── Lazy Loaders ───────────────────────────────────────────────────
@@ -172,11 +133,6 @@ class Pipeline:
             from retrieval.metadata import MetadataRetriever
             self._meta = MetadataRetriever()
         return self._meta
-    def _get_hybrid(self):
-        if not self._hybrid: 
-            from retrieval.hybrid import HybridRetriever
-            self._hybrid = HybridRetriever()
-        return self._hybrid
 
     def _log(self, msg: str):
         if self.debug: print(f"  [pipeline] {msg}")
