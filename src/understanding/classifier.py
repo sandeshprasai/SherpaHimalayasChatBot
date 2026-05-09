@@ -17,27 +17,33 @@ class UniversalClassifier:
 
     def classify(self, req: QueryRequest) -> QueryRequest:
         prompt = f"""
-        Database Fields: {self.available_keys}
-        Query: "{req.text}"
+        CONTEXT: You are a JSON Query Engine. 
+        SCHEMA_FIELDS: {self.available_keys}
+        USER_QUERY: "{req.text}"
         
-        Task: Create a JSON Data Execution Plan.
-        Intents: "compare", "filter", "summarize", "lookup", "aggregate", "general"
+        TASK: Translate the natural language query into a structured Data Execution Plan.
 
-        Return ONLY JSON:
+        RULES:
+        1. 'intent': Must be "aggregate" (superlatives), "compare" (vs), "filter" (constraints), "summarize" (details), "lookup" (one specific), or "general".
+        2. 'sort_field': Must be the EXACT string from SCHEMA_FIELDS.
+        3. 'sort_direction': "desc" for most/highest/longest, "asc" for least/lowest/shortest.
+        4. 'needs_semantic_search': True if query is descriptive/subjective. False if purely numeric/logical.
+
+        Return ONLY raw JSON:
         {{
           "intent": "string",
-          "filters": {{}},
-          "sort_field": "string or null",
+          "filters": {{ "field": "value" }},
+          "sort_field": "field_name" or null,
           "sort_direction": "asc"|"desc",
           "limit": 5,
           "needs_semantic_search": boolean,
-          "reasoning": "string"
+          "reasoning": "logical explanation"
         }}
         """
         try:
             resp = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "system", "content": "You are a data architect."},
+                messages=[{"role": "system", "content": "You are a precise data architect."},
                           {"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.0

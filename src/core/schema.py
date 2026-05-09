@@ -15,7 +15,6 @@ class RetrievalStrategy(Enum):
     VECTOR   = "vector"
     METADATA = "metadata"
     HYBRID   = "hybrid"
-    FULL_DOC = "full_doc"
 
 @dataclass
 class DataExecutionPlan:
@@ -33,9 +32,11 @@ class QueryRequest:
     normalized: str = ""
     plan: DataExecutionPlan = field(default_factory=DataExecutionPlan)
     entities: List[Dict[str, Any]] = field(default_factory=list)
-    # Compatibility properties
+
     @property
-    def intent(self): return self.plan.intent
+    def intent(self) -> QueryIntent:
+        """Compatibility property for prompt builders."""
+        return self.plan.intent
 
 @dataclass
 class SourceNode:

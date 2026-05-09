@@ -13,6 +13,7 @@ class MetadataRetriever:
         with open(path, "r", encoding="utf-8") as f:
             self._records = json.load(f)
         
+        # Discover schema keys from data
         keys = set()
         for r in self._records:
             keys.update(r.keys())
@@ -27,10 +28,13 @@ class MetadataRetriever:
 
         if plan.sort_field and plan.sort_field in self.schema_keys:
             rev = (plan.sort_direction.lower() == "desc")
-            def sort_fn(x):
+            sortable = [r for r in results if r.get(plan.sort_field) is not None]
+            
+            def sort_key(x):
                 val = x.get(plan.sort_field)
                 if isinstance(val, (int, float)): return val
                 if isinstance(val, str) and val.replace('.','',1).isdigit(): return float(val)
                 return 0
-            results = sorted(results, key=sort_fn, reverse=rev)
+                
+            results = sorted(sortable, key=sort_key, reverse=rev)
         return results[:plan.limit]
