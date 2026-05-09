@@ -1,138 +1,86 @@
 import os
-import json
-from typing import Any, List, Optional # <--- FIXED: Added Any here
-from config.settings import settings
-from core.schema import QueryRequest, QueryResponse, SourceNode, RoutingDecision
-from core.router import Router
-from understanding.normalizer import normalize
+from typing import Any
+from core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy
+from retrieval.metadata import MetadataRetriever
 from understanding.classifier import classify
-from understanding.entity_resolver import EntityResolver
-from generation.generator import Generator, FALLBACK_MESSAGE
-from generation.prompt_builder import PromptBuilder
+from understanding.normalizer import normalize
+from generation.generator import Generator
 
 class Pipeline:
     def __init__(self, debug: bool = False):
         self.debug = debug
-        self._router = Router()
-        self._builder = PromptBuilder()
-        self._resolver = EntityResolver()
-        self._generator = None
+        self.meta_engine = MetadataRetriever()
+        self.generator = Generator()
         self._vec = None
-        self._meta = None
-        self._hybrid = None
-        self._used_tokens = 0
+
+    def _recursive_flatten(self, data: Any, depth: int = 0) -> str:
+        """Recursive flattener: Handles any data depth (itineraries, specs, etc)"""
+        prefix = "  " * depth
+        if isinstance(data, dict):
+            lines = []
+            for k, v in data.items():
+                if k.startswith("_") or k in ["embedding_chunks", "id"]: continue
+                label = k.replace("_", " ").upper()
+                if isinstance(v, (dict, list)):
+                    lines.append(f"{prefix}{label}:")
+                    lines.append(self._recursive_flatten(v, depth + 1))
+                else:
+                    lines.append(f"{prefix}{label}: {v}")
+            return "\n".join(lines)
+        elif isinstance(data, list):
+            items = []
+            for i in data:
+                if isinstance(i, (dict, list)):
+                    items.append(self._recursive_flatten(i, depth + 1))
+                else:
+                    items.append(f"{prefix}- {i}")
+            return "\n".join(items)
+        return str(data)
 
     def run(self, user_query: str) -> QueryResponse:
-        # 1. Normalize and Classify (Generates data_plan)
-        normalized = normalize(user_query)
-        req = QueryRequest(text=user_query, normalized=normalized)
-        classify(req)
+        norm_text = normalize(user_query, self.meta_engine._records)
+        req = QueryRequest(text=user_query, normalized=norm_text)
+        classify(req, self.meta_engine.schema_keys)
         
-        # 2. Resolve entities if needed
-        if req.needs_entity:
-            req.entities = self._resolver.resolve(normalized)
-        
-        # 3. Route the request
-        decision = self._router.route(req)
-        self._log(f"Routing Decision: {decision.reason}")
-
         source_nodes = []
-        
-        # 4. Retrieval based on the Plan
-        # If the LLM data_plan has filters or sorts, use Metadata Engine
-        plan = getattr(req, 'data_plan', {})
-        
-        if plan.get("filters") or plan.get("sort"):
+        strategy = RetrievalStrategy.VECTOR
+
+        # 1. Structured Data Execution
+        if req.plan.filters or req.plan.sort_field:
+            strategy = RetrievalStrategy.METADATA
+            raw_data = self.meta_engine.execute_plan(req.plan)
+            source_nodes = [
+                SourceNode(text=self._recursive_flatten(d), title=d.get("title"), source_id=d.get("id"))
+                for d in raw_data
+            ]
+
+        # 2. Semantic Fallback
+        if req.plan.needs_semantic_search or not source_nodes:
+            if strategy == RetrievalStrategy.METADATA: strategy = RetrievalStrategy.HYBRID
             try:
-                raw_results = self._get_meta().execute_plan(plan)
-                source_nodes = [
-                    SourceNode(
-                        text=self._universal_formatter(r), 
-                        title=r.get("title")
-                    ) for r in raw_results
-                ]
+                if not self._vec:
+                    from retrieval.vector import VectorRetriever
+                    self._vec = VectorRetriever()
+                vec_results = self._vec.search(req.normalized)
+                source_nodes.extend(vec_results)
             except Exception as e:
-                self._log(f"Metadata execution failed: {e}")
+                if self.debug: print(f"  [Error] Vector search: {e}")
 
-        # 5. Semantic Fallback (Vector Search)
-        # If metadata found nothing or it's a general question, use Vector
         if not source_nodes:
-            try:
-                source_nodes = self._get_vec().search(normalized)
-            except Exception as e:
-                self._log(f"Vector search failed: {e}")
+            return QueryResponse(answer="I couldn't find any relevant records.", is_fallback=True, used_llm=False)
 
-        # 6. Entity Injection (Guarantee specific data is present)
-        if req.entities:
-            for ent in req.entities:
-                if not any(n.title == ent.get("title") for n in source_nodes):
-                    source_nodes.insert(0, SourceNode(
-                        text=self._universal_formatter(ent),
-                        title=ent.get("title")
-                    ))
-
-        # 7. LLM Generation
-        if not source_nodes:
-            return QueryResponse(answer=FALLBACK_MESSAGE, is_fallback=True)
-
-        prompt = self._builder.build(req, source_nodes)
-        gen = self._get_generator()
-        answer, tokens = gen.generate(prompt)
-        self._used_tokens += tokens
-
+        # 3. LLM Generation
+        from generation.prompt_builder import PromptBuilder
+        builder = PromptBuilder()
+        prompt = builder.build(req, source_nodes)
+        answer, tokens = self.generator.generate(prompt)
+        
         return QueryResponse(
             answer=answer,
             sources=source_nodes,
             tokens_used=tokens,
-            is_fallback=gen.is_fallback(answer)
+            cost_usd=(tokens / 1_000_000) * 0.59,
+            used_llm=True,
+            intent=req.plan.intent,
+            strategy=strategy
         )
-
-    @staticmethod
-    def _universal_formatter(data: Any, depth=0) -> str:
-        """Recursively flattens ANY dictionary or list into a readable string."""
-        if not isinstance(data, (dict, list)):
-            return str(data)
-
-        lines = []
-        prefix = "  " * depth
-        
-        if isinstance(data, dict):
-            for k, v in data.items():
-                # Skip heavy/internal fields
-                if k in ["_source", "id", "embedding_chunks", "aliases"]: 
-                    continue
-                
-                label = f"{prefix}{k.replace('_', ' ').upper()}:"
-                
-                if isinstance(v, (dict, list)):
-                    lines.append(f"{label}")
-                    lines.append(Pipeline._universal_formatter(v, depth + 1))
-                else:
-                    lines.append(f"{label} {v}")
-        
-        elif isinstance(data, list):
-            for item in data:
-                if isinstance(item, (dict, list)):
-                    lines.append(Pipeline._universal_formatter(item, depth + 1))
-                else:
-                    lines.append(f"{prefix}- {item}")
-                    
-        return "\n".join(lines)
-
-    # ── Lazy Loaders ───────────────────────────────────────────────────
-    def _get_generator(self):
-        if not self._generator: self._generator = Generator()
-        return self._generator
-    def _get_vec(self):
-        if not self._vec: 
-            from retrieval.vector import VectorRetriever
-            self._vec = VectorRetriever()
-        return self._vec
-    def _get_meta(self):
-        if not self._meta: 
-            from retrieval.metadata import MetadataRetriever
-            self._meta = MetadataRetriever()
-        return self._meta
-
-    def _log(self, msg: str):
-        if self.debug: print(f"  [pipeline] {msg}")
