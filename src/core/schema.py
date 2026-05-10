@@ -24,6 +24,7 @@ class DataExecutionPlan:
     limit: int = 5
     needs_semantic_search: bool = True
     intent: QueryIntent = QueryIntent.GENERAL
+    search_query: str = "" # <--- NEW: The LLM-enhanced search string
     reasoning: str = ""
 
 @dataclass
@@ -32,11 +33,8 @@ class QueryRequest:
     normalized: str = ""
     plan: DataExecutionPlan = field(default_factory=DataExecutionPlan)
     entities: List[Dict[str, Any]] = field(default_factory=list)
-
     @property
-    def intent(self) -> QueryIntent:
-        """Compatibility property for prompt builders."""
-        return self.plan.intent
+    def intent(self) -> QueryIntent: return self.plan.intent
 
 @dataclass
 class SourceNode:

@@ -17,19 +17,18 @@ class UniversalClassifier:
 
     def classify(self, req: QueryRequest) -> QueryRequest:
         prompt = f"""
-        CONTEXT: You are a JSON Query Engine. 
-        SCHEMA_FIELDS: {self.available_keys}
-        USER_QUERY: "{req.text}"
+        FIELDS: {self.available_keys}
+        QUERY: "{req.text}"
         
-        TASK: Translate the natural language query into a structured Data Execution Plan.
+        TASK: Generate a Data Execution Plan and an ENHANCED search query.
 
-        RULES:
-        1. 'intent': Must be "aggregate" (superlatives), "compare" (vs), "filter" (constraints), "summarize" (details), "lookup" (one specific), or "general".
-        2. 'sort_field': Must be the EXACT string from SCHEMA_FIELDS.
-        3. 'sort_direction': "desc" for most/highest/longest, "asc" for least/lowest/shortest.
-        4. 'needs_semantic_search': True if query is descriptive/subjective. False if purely numeric/logical.
+        RULES for 'search_query':
+        - Rewrite the user query into a highly descriptive, professional expansion.
+        - If the user is vague ("Shortest"), explain what is being measured ("Find the record with the minimum value in the duration field").
+        - If entities are mentioned, use their full canonical names.
+        - This string will be used for Vector Semantic Search.
 
-        Return ONLY raw JSON:
+        Return ONLY JSON:
         {{
           "intent": "string",
           "filters": {{ "field": "value" }},
@@ -37,13 +36,14 @@ class UniversalClassifier:
           "sort_direction": "asc"|"desc",
           "limit": 5,
           "needs_semantic_search": boolean,
+          "search_query": "The professionally rewritten and expanded search string",
           "reasoning": "logical explanation"
         }}
         """
         try:
             resp = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "system", "content": "You are a precise data architect."},
+                messages=[{"role": "system", "content": "You are a precise data architect and query optimizer."},
                           {"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.0
@@ -55,12 +55,13 @@ class UniversalClassifier:
                 sort_direction=d.get("sort_direction", "asc"),
                 limit=d.get("limit", 5),
                 needs_semantic_search=d.get("needs_semantic_search", True),
+                search_query=d.get("search_query", req.text), # <--- NEW
                 intent=QueryIntent(d.get("intent", "general")),
                 reasoning=d.get("reasoning", "")
             )
             return req
         except Exception:
-            req.plan = DataExecutionPlan()
+            req.plan = DataExecutionPlan(search_query=req.text)
             return req
 
 def classify(req: QueryRequest, keys: list[str]) -> QueryRequest:

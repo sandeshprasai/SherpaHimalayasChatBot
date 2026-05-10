@@ -15,7 +15,6 @@ class Pipeline:
         self._vec = None
 
     def _recursive_flatten(self, data: Any, depth: int = 0) -> str:
-        """Generic JSON to Text flattener."""
         prefix = "  " * depth
         if isinstance(data, dict):
             lines = []
@@ -41,11 +40,18 @@ class Pipeline:
     def run(self, user_query: str) -> QueryResponse:
         norm_text = normalize(user_query, self.meta_engine._records)
         req = QueryRequest(text=user_query, normalized=norm_text)
+        
+        # 1. Classification & Query Enhancement
         classify(req, self.meta_engine.schema_keys)
         
+        if self.debug: 
+            print(f"  [Original] {user_query}")
+            print(f"  [Enhanced] {req.plan.search_query}")
+
         source_nodes = []
         strategy = RetrievalStrategy.VECTOR
 
+        # 2. Metadata Lookup
         if req.plan.filters or req.plan.sort_field:
             strategy = RetrievalStrategy.METADATA
             raw_data = self.meta_engine.execute_plan(req.plan)
@@ -54,25 +60,26 @@ class Pipeline:
                 for d in raw_data
             ]
 
+        # 3. Vector Retrieval (USING ENHANCED QUERY)
         if not source_nodes or req.plan.needs_semantic_search:
             if source_nodes: strategy = RetrievalStrategy.HYBRID
             try:
                 if not self._vec:
                     from retrieval.vector import VectorRetriever
                     self._vec = VectorRetriever()
-                vec_nodes = self._vec.search(req.normalized)
+                
+                # USE ENHANCED QUERY HERE
+                vec_results = self._vec.search(req.plan.search_query)
+                
                 existing_titles = [n.title for n in source_nodes if n.title]
-                for vn in vec_nodes:
+                for vn in vec_results:
                     if vn.title not in existing_titles:
                         source_nodes.append(vn)
             except Exception as e:
                 if self.debug: print(f"  [Error] Vector: {e}")
 
         if not source_nodes:
-            return QueryResponse(
-                answer=f"The system could not find relevant information in the current dataset. Please contact {settings.company_email}.",
-                is_fallback=True, used_llm=False
-            )
+            return QueryResponse(answer=f"No results found for enhanced query. Contact {settings.company_email}.", is_fallback=True)
 
         from generation.prompt_builder import PromptBuilder
         builder = PromptBuilder()
