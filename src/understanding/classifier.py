@@ -2,7 +2,7 @@ import json
 import os
 from groq import Groq
 from dotenv import load_dotenv
-from core.schema import QueryRequest, DataExecutionPlan, QueryIntent
+from src.core.schema import QueryRequest, DataExecutionPlan, QueryIntent
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "../.."))

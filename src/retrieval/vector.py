@@ -37,8 +37,8 @@ for _p in (_SRC, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from config.settings import settings
-from core.schema import SourceNode
+from src.config.settings import settings
+from src.core.schema import SourceNode
 
 
 class VectorRetriever:
@@ -158,7 +158,7 @@ class VectorRetriever:
 
         for root, _, files in os.walk(settings.rag_ready_dir):
             for fname in sorted(files):
-                if not fname.endswith(".json") or fname == "metadata_index.json":
+                if not fname.endswith(".json") or "metadata_index" in fname:
                     continue
 
                 fpath = os.path.join(root, fname)

@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
-from config.settings import settings
+from src.config.settings import settings
+
 
 class PromptBuilder:
     def __init__(self):

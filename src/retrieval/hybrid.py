@@ -1,11 +1,12 @@
 import json
 # Added SourceNode to the import list below
-from core.schema import QueryRequest, QueryIntent, SourceNode 
+from src.core.schema import QueryRequest, QueryIntent, SourceNode 
+
 
 class HybridRetriever:
     def __init__(self):
-        from retrieval.metadata import MetadataRetriever
-        from retrieval.vector import VectorRetriever
+        from src.retrieval.metadata import MetadataRetriever
+        from src.retrieval.vector import VectorRetriever
         self._meta = MetadataRetriever()
         self._vec = VectorRetriever()
 

@@ -1,10 +1,11 @@
 import sys
 import traceback
-sys.path.insert(0, 'src')
+from src.retrieval.vector import VectorRetriever
+
 
 def run():
     try:
-        from retrieval.vector import VectorRetriever
+        from src.retrieval.vector import VectorRetriever
         v = VectorRetriever()
         v._ensure_ready()
         print('Vector index loaded or built successfully.')

@@ -1,11 +1,11 @@
 import os
 from typing import Any
-from core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy
-from retrieval.metadata import MetadataRetriever
-from understanding.classifier import classify
-from understanding.normalizer import normalize
-from generation.generator import Generator
-from config.settings import settings
+from src.core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy
+from src.retrieval.metadata import MetadataRetriever
+from src.understanding.classifier import classify
+from src.understanding.normalizer import normalize
+from src.generation.generator import Generator
+from src.config.settings import settings
 
 class Pipeline:
     def __init__(self, debug: bool = False):
@@ -65,7 +65,7 @@ class Pipeline:
             if source_nodes: strategy = RetrievalStrategy.HYBRID
             try:
                 if not self._vec:
-                    from retrieval.vector import VectorRetriever
+                    from src.retrieval.vector import VectorRetriever
                     self._vec = VectorRetriever()
                 
                 # USE ENHANCED QUERY HERE

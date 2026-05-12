@@ -1,30 +1,23 @@
-"""
-chat.py
-────────
-Interactive terminal interface for the Sherpa Himalaya chatbot.
-Run from project root:
 
-    python src/chat.py
-"""
 
+import importlib
 import os
-# Early telemetry/analytics suppression to avoid noisy errors from deps
+import sys
+
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HUGGINGFACE_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 try:
-    import analytics
+    analytics = importlib.import_module("analytics")
     analytics.capture = lambda *args, **kwargs: None
 except Exception:
-    pass
+    analytics = None
 try:
-    import posthog
+    posthog = importlib.import_module("posthog")
     posthog.capture = lambda *args, **kwargs: None
 except Exception:
-    pass
-
-import sys
+    posthog = None
 
 # ── path setup ───────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,8 +26,8 @@ for _p in (_HERE, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from core.pipeline import Pipeline
-from config.settings import settings
+from src.core.pipeline import Pipeline
+from src.config.settings import settings
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DISPLAY HELPERS

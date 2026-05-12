@@ -1,6 +1,7 @@
 import json
 import os
-from config.settings import settings
+from src.config.settings import settings
+
 
 class EntityResolver:
     def __init__(self):

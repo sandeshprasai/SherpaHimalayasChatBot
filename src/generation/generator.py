@@ -27,7 +27,8 @@ for _p in (_SRC, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from config.settings import settings
+from src.config.settings import settings
+
 
 
 # ── Fallback phrases — if LLM output contains any of these,

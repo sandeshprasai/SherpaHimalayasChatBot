@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Any
-from config.settings import settings
+from src.config.settings import settings
 
 class MetadataRetriever:
     def __init__(self):
