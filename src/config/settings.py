@@ -68,6 +68,7 @@ class Settings:
     # ── Company contact (used in fallback messages) ─────────────────────────
     company_email:    str = "info@sherpahimalaya.com"
     company_name:     str = "Sherpa Himalaya"
+    system_name:  str = "Travel Information System"
 
     # ── Difficulty ranking (shared across retrieval + classifier) ───────────
     difficulty_rank: dict = field(default_factory=lambda: {

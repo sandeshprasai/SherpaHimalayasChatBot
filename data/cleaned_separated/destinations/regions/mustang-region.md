@@ -1,5 +1,0 @@
-# URL: https://sherpahimalaya.genesiswtech.com/mustang-region/
-
-Mustang was once an independent kingdom, although closely tied by language and culture to Tibet. From the 15th century to the 17th century, its strategic location granted Mustang control over the trade between the Himalayas and India. At the end of the 18th century the kingdom was annexed by Nepaland became a dependency of the Kingdom of Nepalsince 1795 [4]
-Though still recognized by many Mustang residents, the monarchy ceased to exist on October 7, 2008, by order of the Government of Nepal.[5] The last official and later unofficial king (raja or gyelpo) was Jigme Dorje Palbar Bista (1930–2016),[6] who traced his lineage directly back to Ame Pal, the warrior who founded this Buddhist kingdom in 1380.[7] Ame Pal oversaw the founding and building of much of the Lo and Mustang capital of Lo Manthang, a walled city surprisingly little changed in appearance from that time period.[8]
-In 2007, a shepherd in Mustang discovered a collection of 55 cave paintings depicting the life of the Buddha.[

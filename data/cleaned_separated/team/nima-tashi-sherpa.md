@@ -1,6 +1,0 @@
-# URL: https://sherpahimalaya.genesiswtech.com/team/nima-tashi-sherpa/
-
-Nima Tashi Sherpa
-Trekking and Climbing GuideNima Tashi Sherpa is a highly experienced and dedicated trekking and climbing guide from the renowned Khumjung village, nestled at the foot of the majestic Himalayas. Growing up surrounded by the awe-inspiring peaks of the Everest region, Nima developed a deep passion and extensive knowledge of trekking and mountaineering from an early age. His childhood fascination with the mountains naturally led him to pursue a career in Nepal’s thriving tourism and adventure industry.
-With over a decade of experience, Nima has become a trusted and respected professional in the field. Since joining Sherpa Himalaya in 2019, he has consistently demonstrated exceptional skill, resilience, and compassion while guiding clients to some of Nepal’s most iconic trekking and expedition destinations, including Everest Base Camp, the Manaslu Circuit, Kanchenjunga, Annapurna, and beyond.
-As a certified trekking and mountain guide, Nima combines his expertise with a heartfelt love for the mountains, always prioritizing the safety, comfort, and success of his clients. Known for his hardworking nature and kind spirit, Nima has earned a reputation as a reliable guide who is committed to making every trekking or climbing journey an inspiring and unforgettable experience.
