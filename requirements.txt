@@ -1,25 +1,54 @@
-# --- AI Framework (LlamaIndex v0.11 Modular) ---
+# =====================================================
+# Core AI / RAG
+# =====================================================
 llama-index-core==0.11.23
 llama-index-llms-groq==0.2.0
 llama-index-embeddings-huggingface==0.3.0
 llama-index-vector-stores-chroma==0.2.0
 llama-index-readers-file==0.2.0
 
-# --- Scraping ---
+# =====================================================
+# LLM Providers
+# =====================================================
+groq==0.11.0
+
+# =====================================================
+# Embeddings / Vector DB
+# =====================================================
+sentence-transformers==3.0.1
+chromadb==0.5.5
+transformers==4.44.2
+torch==2.4.1
+
+# =====================================================
+# Tokenization
+# =====================================================
+tiktoken==0.7.0
+
+# =====================================================
+# API / Backend
+# =====================================================
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.2
+
+# =====================================================
+# Environment / Utilities
+# =====================================================
+python-dotenv==1.0.1
+pandas==2.2.2
+numpy==2.1.1
+
+# =====================================================
+# Scraping / Parsing
+# =====================================================
 requests==2.32.3
 beautifulsoup4==4.12.3
 trafilatura==1.12.0
 lxml==5.3.0
 
-# --- System & API ---
-python-dotenv==1.0.1
-pandas==2.2.2
-fastapi==0.115.0
-uvicorn==0.30.6
-
-# --- Dependencies for Embeddings & Chroma ---
-# Using specific versions prevents 'pip' from guessing
-sentence-transformers==3.0.1
-chromadb==0.5.5
-transformers==4.44.2
-torch==2.4.1
+# =====================================================
+# Optional Production Utilities
+# =====================================================
+gunicorn==23.0.0
+httpx==0.27.2
