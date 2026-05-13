@@ -2,7 +2,12 @@
 import os
 import sys
 
-from core.schema import QueryRequest, QueryIntent, RetrievalStrategy, RoutingDecision
+from src.core.schema import (
+    QueryRequest,
+    QueryIntent,
+    RetrievalStrategy,
+    RoutingDecision
+)
 
 class Router:
     """

@@ -1,6 +1,7 @@
 import os
 from typing import Any
 from src.core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy
+from src.generation.prompt_builder import PromptBuilder
 from src.retrieval.metadata import MetadataRetriever
 from src.understanding.classifier import classify
 from src.understanding.normalizer import normalize

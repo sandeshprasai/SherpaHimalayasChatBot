@@ -1,33 +1,8 @@
-"""
-retrieval/vector.py
-────────────────────
-Vector retrieval layer. Wraps ChromaDB + LlamaIndex.
-
-Responsibilities:
-  - Load and index documents from rag_ready/ (once, then cached)
-  - Run semantic similarity search for a query string
-  - Return a list of SourceNode objects
-
-KEY CHANGE: search() now accepts prefer_types parameter.
-  When set, fetches 3x candidates and promotes documents whose
-  metadata["type"] is in prefer_types to the front of results.
-  Used by pipeline for GENERAL queries to surface company/team/info/blog
-  pages above the 60+ trek pages that otherwise dominate rankings.
-
-Usage:
-    from retrieval.vector import VectorRetriever
-    retriever = VectorRetriever()
-
-    # Standard search
-    nodes = retriever.search("What is included in Ghorepani Circuit Trek?")
-
-    # Type-boosted search (company/info pages ranked first)
-    nodes = retriever.search("How do I book?", prefer_types=["info", "company"])
-"""
 
 import os
 import sys
 import json
+
 
 # ── path setup ───────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,10 +17,7 @@ from src.core.schema import SourceNode
 
 
 class VectorRetriever:
-    """
-    Lazy-initialised vector retriever.
-    First call to search() builds/loads the ChromaDB index.
-    """
+   
 
     def __init__(self):
         self._index  = None   # LlamaIndex VectorStoreIndex

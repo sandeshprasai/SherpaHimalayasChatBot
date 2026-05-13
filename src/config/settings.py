@@ -1,70 +1,195 @@
 """
-config/settings.py
-──────────────────
-Single source of truth for every constant, path, and model name
-in the Sherpa Himalaya chatbot.
-
-Import anywhere with:
-    from config.settings import settings
+src/config/settings.py
+──────────────────────
+Centralized application configuration for:
+- FastAPI
+- RAG pipeline
+- ChromaDB
+- LLMs
+- Production deployment
 """
 
 import importlib
 import os
-# Disable common telemetry/analytics from deps to reduce noisy console errors
+
+from typing import List
+from pydantic_settings import BaseSettings
+
+
+# =============================================================================
+# Disable telemetry / analytics noise
+# =============================================================================
+
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HUGGINGFACE_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 os.environ.setdefault("LLAMA_INDEX_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("CHROMA_DISABLE_TELEMETRY", "1")
-# Try to monkeypatch common analytics libraries to avoid noisy errors
+
 try:
     analytics = importlib.import_module("analytics")
     analytics.capture = lambda *args, **kwargs: None
 except Exception:
     pass
+
 try:
     posthog = importlib.import_module("posthog")
     posthog.capture = lambda *args, **kwargs: None
 except Exception:
     pass
-from dataclasses import dataclass, field
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ROOT RESOLUTION  (works regardless of working directory)
-# ──────────────────────────────────────────────────────────────────────────────
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
+# =============================================================================
+# Root Resolution
+# =============================================================================
 
-@dataclass(frozen=True)
-class Settings:
-    project_root: str = _PROJECT_ROOT
-    data_dir: str = os.path.join(_PROJECT_ROOT, "data")
-    
-    # Dataset Path
-    rag_ready_dir: str = os.path.join(_PROJECT_ROOT, "data/datasets/rag_ready")
-    
-    # Index Paths (Updated for refactored structure)
-    vector_db_dir: str = os.path.join(_PROJECT_ROOT, "data/indexes/chroma/vector_db")
-    metadata_index: str = os.path.join(_PROJECT_ROOT, "data/indexes/metadata/metadata_index.json")
-    cleaned_metadata_index: str = os.path.join(_PROJECT_ROOT, "data/indexes/metadata/metadata_index.cleaned.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
 
-    # LLM & Embedding Config
+PROJECT_ROOT = os.path.abspath(
+    os.path.join(HERE, "../..")
+)
+
+
+# =============================================================================
+# Settings
+# =============================================================================
+
+class Settings(BaseSettings):
+
+    # =========================================================================
+    # APP
+    # =========================================================================
+
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = True
+
+    # =========================================================================
+    # SERVER
+    # =========================================================================
+
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+
+    # =========================================================================
+    # SECURITY
+    # =========================================================================
+
+    API_KEY: str = "supersecretapikey"
+
+    # =========================================================================
+    # GROQ
+    # =========================================================================
+
+    GROQ_API_KEY: str
+
+    # =========================================================================
+    # LOGGING
+    # =========================================================================
+
+    LOG_LEVEL: str = "INFO"
+
+    # =========================================================================
+    # CORS
+    # =========================================================================
+
+    ALLOWED_ORIGINS: str = ""
+
+    # =========================================================================
+    # PROJECT ROOT
+    # =========================================================================
+
+    project_root: str = PROJECT_ROOT
+
+    # =========================================================================
+    # DATA DIRECTORIES
+    # =========================================================================
+
+    data_dir: str = os.path.join(PROJECT_ROOT, "data")
+
+    rag_ready_dir: str = os.path.join(
+        PROJECT_ROOT,
+        "data/datasets/rag_ready"
+    )
+
+    # =========================================================================
+    # INDEXES
+    # =========================================================================
+
+    vector_db_dir: str = os.path.join(
+        PROJECT_ROOT,
+        "data/indexes/chroma/vector_db"
+    )
+
+    metadata_index: str = os.path.join(
+        PROJECT_ROOT,
+        "data/indexes/metadata/metadata_index.json"
+    )
+
+    cleaned_metadata_index: str = os.path.join(
+        PROJECT_ROOT,
+        "data/indexes/metadata/metadata_index.cleaned.json"
+    )
+
+    # =========================================================================
+    # MODEL CONFIG
+    # =========================================================================
+
     llm_model: str = "llama-3.3-70b-versatile"
+
     llm_temperature: float = 0.1
+
     llm_max_tokens: int = 1024
+
     embed_model: str = "BAAI/bge-small-en-v1.5"
 
-    # Retrieval Config
+    # =========================================================================
+    # RETRIEVAL CONFIG
+    # =========================================================================
+
     similarity_top_k: int = 5
+
     chroma_collection: str = "sherpa_knowledge"
 
-    # Company Branding
+    # =========================================================================
+    # BRANDING
+    # =========================================================================
+
     company_email: str = "info@sherpahimalaya.com"
+
     company_name: str = "Sherpa Himalaya"
+
     system_name: str = "Travel Information System"
 
+    # =========================================================================
+    # RATE LIMITING
+    # =========================================================================
+
     daily_token_limit: int = 100_000
+
+    # =========================================================================
+    # ENV FILE
+    # =========================================================================
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+    # =========================================================================
+    # Parsed CORS Origins
+    # =========================================================================
+
+    @property
+    def cors_origins(self) -> List[str]:
+        return [
+            origin.strip()
+            for origin in self.ALLOWED_ORIGINS.split(",")
+            if origin.strip()
+        ]
+
+
+# =============================================================================
+# Singleton Settings Instance
+# =============================================================================
 
 settings = Settings()

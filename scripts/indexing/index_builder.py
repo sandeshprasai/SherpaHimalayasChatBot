@@ -10,13 +10,14 @@ import os
 import json
 import glob
 
-# ──────────────────────────────────────────
-# PATHS  (adjust if you move this file)
-# ──────────────────────────────────────────
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../../"))
-RAG_READY_DIR = os.path.join(PROJECT_ROOT, "data/rag_ready")
+
+RAG_READY_DIR = os.path.join(PROJECT_ROOT, "data/datasets/rag_ready")
 OUTPUT_FILE = os.path.join(RAG_READY_DIR, "metadata_index.json")
+
 
 
 # ──────────────────────────────────────────
