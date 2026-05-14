@@ -27,6 +27,11 @@ class PromptBuilder:
         3. NO TECHNICAL TAGS: Never use the word "(inferred)" or similar markers. If you are suggesting something likely but not 100% stated, use natural language like "Typically," or "We suggest."
         4. SOURCE OF TRUTH: Use the provided records below as your ONLY knowledge. If the answer is not there, politely say you don't have that specific detail and suggest contacting {self.email}.
         5. FORMATTING: Use clear, clean formatting (bullet points or bold text) to make information easy to read.
+            6. JSON EXTRACTION RULES:
+                - Identify the primary attributes (e.g., name, status, metrics) from the records.
+                - Create a list of objects containing these key attributes.
+                - Wrap this list in <DATA> [...] </DATA> tags at the very end of your response.
+                - Do not invent fields; only use what is present in the data.
         """
 
         # 2. DATA PREPARATION (Internal only, LLM shouldn't repeat these labels)

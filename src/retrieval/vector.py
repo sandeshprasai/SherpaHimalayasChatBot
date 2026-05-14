@@ -23,33 +23,18 @@ class VectorRetriever:
         self._index  = None   # LlamaIndex VectorStoreIndex
         self._engine = None   # LlamaIndex retriever engine
 
-    # ──────────────────────────────────────────────────────────────────────
-    # PUBLIC
-    # ──────────────────────────────────────────────────────────────────────
-
+    
     def search(
         self,
         query: str,
         top_k: int | None = None,
         prefer_types: list[str] | None = None,
     ) -> list[SourceNode]:
-        """
-        Run semantic similarity search.
-
-        Args:
-            query        : the search string
-            top_k        : number of results to return (default: settings.similarity_top_k)
-            prefer_types : optional list of doc types to promote (e.g. ["info", "company"])
-                           When set, fetches top_k * 3 candidates then reorders so docs
-                           whose metadata["type"] is in prefer_types come first.
-
-        Returns:
-            Up to top_k SourceNode objects ordered by relevance (with type boost applied).
-        """
+        
         self._ensure_ready()
         k = top_k or settings.similarity_top_k
 
-        # Fetch more candidates when boosting so reranking has material to work with
+       
         fetch_k = k * 3 if prefer_types else k
         raw_nodes = self._engine.retrieve(query)[:fetch_k]
 
@@ -78,13 +63,11 @@ class VectorRetriever:
         ]
 
     def get_index(self):
-        """Expose the raw LlamaIndex index (used by chat engine if needed)."""
+        
         self._ensure_ready()
         return self._index
 
-    # ──────────────────────────────────────────────────────────────────────
-    # PRIVATE
-    # ──────────────────────────────────────────────────────────────────────
+    
 
     def _ensure_ready(self):
         if self._index is not None:
@@ -138,7 +121,7 @@ class VectorRetriever:
                     with open(fpath, encoding="utf-8") as f:
                         data = json.load(f)
 
-                    # GENERALIZED: Process everything as a list
+                    
                     items = data if isinstance(data, list) else [data]
 
                     for item in items:
@@ -163,10 +146,7 @@ class VectorRetriever:
 
     @staticmethod
     def _build_text(data: dict) -> str:
-        """
-        Build a rich, LLM-readable text block from a rag_ready JSON record.
-        Handles both trek/expedition records AND company/team/info/blog records.
-        """
+        
         lines = []
 
         def add(label, value):
@@ -178,7 +158,7 @@ class VectorRetriever:
         add("CATEGORY", data.get("category"))
         add("REGION",   data.get("region"))
 
-        # Duration (trek-specific, safe to skip if absent)
+       
         duration_val = data.get("duration_days")
         if duration_val is not None:
             try:
@@ -192,7 +172,7 @@ class VectorRetriever:
         add("MAX ALTITUDE", f"{data['max_altitude_m']} m" if data.get("max_altitude_m") else None)
         add("SUMMARY",      data.get("summary"))
 
-        # content_sections — used by company / team / info / blog pages
+       
         for section in data.get("content_sections", []):
             if not isinstance(section, dict):
                 continue
@@ -203,7 +183,7 @@ class VectorRetriever:
             elif text:
                 lines.append(text)
 
-        # attributes — can be a plain dict OR a list of {label/key, value} dicts
+       
         raw_attrs = data.get("attributes")
         if isinstance(raw_attrs, dict):
             for k, v in raw_attrs.items():
@@ -218,7 +198,7 @@ class VectorRetriever:
                 if k and v:
                     lines.append(f"{k}: {v}")
 
-        # Trek-specific fields
+       
         highlights = data.get("highlights", [])
         if highlights:
             add("TRIP HIGHLIGHTS", ", ".join(h for h in highlights if h))
@@ -241,7 +221,7 @@ class VectorRetriever:
         if excludes:
             add("EXCLUSIONS", ", ".join(e for e in excludes if e))
 
-        # embedding_chunks as supplementary searchable text
+       
         joined = "\n".join(lines)
         for chunk in data.get("embedding_chunks", []):
             if not isinstance(chunk, dict):
@@ -254,7 +234,7 @@ class VectorRetriever:
 
     @staticmethod
     def _extract_title(text: str) -> str | None:
-        """Pull the TITLE line from a document text block."""
+     
         for line in text.splitlines():
             if line.startswith("TITLE:"):
                 return line.replace("TITLE:", "").strip()

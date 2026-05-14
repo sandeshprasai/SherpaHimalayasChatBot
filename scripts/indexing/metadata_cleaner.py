@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""
-metadata_cleaner.py - Rebuild/clean metadata_index from data/rag_ready JSONs
-Usage:
-  python src/utils/metadata_cleaner.py [--apply]
-Outputs: data/rag_ready/metadata_index.cleaned.json
-"""
 
 import os
 import json

@@ -1,13 +1,3 @@
-<#
-setup_llm_env.ps1
-Creates a Python 3.11 virtual environment, installs pinned dependencies,
-and optionally rebuilds the vector index for LLM/Chroma.
-Usage (PowerShell):
-  # create venv + install deps only
-  .\src\utils\setup_llm_env.ps1
-  # create venv + install deps + rebuild index
-  .\src\utils\setup_llm_env.ps1 -RebuildIndex
-#>
 
 param(
     [switch]$RebuildIndex

@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Batch test runner: generate ~100 diverse queries and run them through the Pipeline.
-Writes results to data/test_results.json and prints a short summary.
-"""
 
 import os
 import sys

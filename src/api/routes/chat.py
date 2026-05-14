@@ -22,7 +22,7 @@ router = APIRouter(
         "Returns an AI-generated answer with optional source references."
     )
 )
-@limiter.limit("20/minute")   # 20 requests per IP per minute
+@limiter.limit("20/minute")   
 async def chat(      
     request: Request,
     body: ChatRequest,
@@ -43,8 +43,7 @@ async def chat(
 
     latency_ms = round((time.time() - start) * 1000)
 
-    # ── Fallback Analytics ─────────────────────────────────────────────────
-    # If the bot couldn't answer, log it so the client can identify data gaps
+   
     if result.is_fallback:
         fallback_logger.warning(
             f"FALLBACK | query='{body.message}' | latency={latency_ms}ms"

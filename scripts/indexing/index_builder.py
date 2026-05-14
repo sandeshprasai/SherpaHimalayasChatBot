@@ -1,10 +1,3 @@
-"""
-index_builder.py
-Run this once (and re-run whenever rag_ready data changes):
-    python src/utils/index_builder.py
-
-Produces: data/rag_ready/metadata_index.json
-"""
 
 import os
 import json
@@ -20,16 +13,14 @@ OUTPUT_FILE = os.path.join(RAG_READY_DIR, "metadata_index.json")
 
 
 
-# ──────────────────────────────────────────
-# FIELDS WE CARE ABOUT FOR FILTERING/SORTING
-# ──────────────────────────────────────────
+
 SCALAR_FIELDS = [
     "id", "title", "category", "region",
     "duration_days", "difficulty", "max_altitude_m",
     "start_location", "summary",
 ]
 
-# Difficulty → numeric for sorting
+
 DIFFICULTY_RANK = {
     "easy": 1,
     "moderate": 2,
@@ -41,7 +32,7 @@ DIFFICULTY_RANK = {
 
 
 def process_single_dict(data: dict, filepath: str, RAG_READY_DIR: str) -> dict | None:
-    """Helper to process a single dictionary record."""
+    
     if not data.get("title"):
         return None
 
@@ -57,7 +48,7 @@ def process_single_dict(data: dict, filepath: str, RAG_READY_DIR: str) -> dict |
     rel_path = os.path.relpath(filepath, RAG_READY_DIR)
     record["_source"] = rel_path.replace("\\", "/")
 
-    # tags and highlights
+    
     record["tags"] = data.get("tags", [])
     record["highlights"] = data.get("highlights", [])
     
@@ -74,7 +65,7 @@ def build_index():
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
             
-            # GENERALIZED HANDLING: Handle both {} and [{}]
+           
             if isinstance(data, list):
                 for item in data:
                     if isinstance(item, dict):

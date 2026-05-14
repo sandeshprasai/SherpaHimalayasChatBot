@@ -1,17 +1,3 @@
-"""
-chunk_enricher.py
-─────────────────
-Run this ONCE on your existing rag_ready JSONs to add richer embedding_chunks.
-The current JSONs only have 2 chunks (overview + itinerary_summary).
-This script adds: highlights, includes_summary, difficulty_region, and
-a full_itinerary chunk — which fixes "describe the full itinerary" failures.
-
-Usage:
-    python src/utils/chunk_enricher.py
-
-It edits rag_ready JSONs IN PLACE (backs up originals to .bak files).
-"""
-
 import os
 import json
 import glob
@@ -23,12 +9,9 @@ RAG_READY    = os.path.join(PROJECT_ROOT, "data/rag_ready")
 
 
 def build_chunks(data: dict) -> list[dict]:
-    """
-    Build a richer set of embedding chunks from a rag_ready JSON record.
-    All existing chunks are preserved; new ones are added if not already present.
-    """
+   
     existing_types = {c["type"] for c in data.get("embedding_chunks", [])}
-    chunks = list(data.get("embedding_chunks", []))   # start with existing
+    chunks = list(data.get("embedding_chunks", []))  
 
     title    = data.get("title", "")
     region   = data.get("region", "")
@@ -37,7 +20,7 @@ def build_chunks(data: dict) -> list[dict]:
     alt      = data.get("max_altitude_m")
     summary  = data.get("summary", "")
 
-    # ── 1. difficulty + region + duration one-liner ─────────────────────────
+    
     if "difficulty_region" not in existing_types:
         parts = []
         if diff:    parts.append(f"Difficulty: {diff}")
@@ -50,21 +33,21 @@ def build_chunks(data: dict) -> list[dict]:
                 "text": f"{title}. {'. '.join(parts)}."
             })
 
-    # ── 2. highlights ────────────────────────────────────────────────────────
+   
     highlights = data.get("highlights", [])
     if highlights and "highlights" not in existing_types:
         text = f"Highlights of {title}: " + "; ".join(highlights) + "."
         chunks.append({"type": "highlights", "text": text})
 
-    # ── 3. includes summary ──────────────────────────────────────────────────
+   
     includes = data.get("includes", [])
     if includes and "includes_summary" not in existing_types:
-        # First 8 items to stay within token budget
+        
         sample = includes[:8]
         text   = f"What is included in {title}: " + ". ".join(sample) + "."
         chunks.append({"type": "includes_summary", "text": text})
 
-    # ── 4. full itinerary ────────────────────────────────────────────────────
+  
     itinerary = data.get("itinerary", [])
     if itinerary and "full_itinerary" not in existing_types:
         day_lines = []
@@ -75,7 +58,7 @@ def build_chunks(data: dict) -> list[dict]:
         text = f"Complete itinerary for {title}:\n" + "\n".join(day_lines)
         chunks.append({"type": "full_itinerary", "text": text})
 
-    # ── 5. tags + category ───────────────────────────────────────────────────
+    
     tags = data.get("tags", [])
     cat  = data.get("category", "")
     if tags and "tags" not in existing_types:
@@ -104,9 +87,9 @@ def enrich_all():
         new_chunks = build_chunks(data)
 
         if len(new_chunks) == old_count:
-            continue   # nothing to add
+            continue   
 
-        # Backup original
+        
         shutil.copy2(fpath, fpath + ".bak")
 
         data["embedding_chunks"] = new_chunks

@@ -4,7 +4,7 @@ import time
 from dotenv import load_dotenv
 from groq import Groq
 
-# 1. Setup Absolute Paths
+
 base_path = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(base_path, "../../"))
 

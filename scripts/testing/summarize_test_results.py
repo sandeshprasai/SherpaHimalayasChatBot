@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Summarize automated test results from data/test_results.json and write a short
-failure/coverage report to data/test_summary.json and stdout.
-"""
 
 import os
 import json
@@ -31,7 +26,7 @@ intent_counts = Counter(r.get('intent') for r in results if r.get('intent'))
 no_source = [r for r in results if r.get('sources_count') == 0]
 no_source_sample = [r.get('query') for r in no_source[:10]]
 
-# Categorize fallback queries to detect common missing areas
+
 def categorize(q: str) -> str:
     ql = (q or '').lower()
     if any(k in ql for k in ('book', 'booking', 'deposit', 'refund', 'cancel', 'cancellation', 'change my mind', 'reschedule')):
