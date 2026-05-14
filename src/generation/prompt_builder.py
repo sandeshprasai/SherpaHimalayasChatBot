@@ -1,35 +1,24 @@
 import os
 from datetime import datetime
 from src.config.settings import settings
+from src.api.schemas.chat import ChatResponse
+import json
+
+
 
 
 class PromptBuilder:
     def __init__(self):
-        # Keep domain values configurable
         self.company = settings.company_name
         self.sys_name = settings.system_name
         self.email = settings.company_email
 
     def build(self, req, source_nodes):
-        schema_text = """
-{
-  "answer": "human readable summary",
-  "sections": [
-    {
-      "type": "cards | table | list | text",
-      "title": "section title",
-      "items": []
-    }
-  ],
-  "suggestions": [
-    "optional follow up question"
-  ]
-}
-"""
-
-        # SYSTEM PROMPT
-        # SYSTEM PROMPT
-        # Do not use f-strings around the schema text to prevent format specifier crashes.
+        schema_dict = ChatResponse.model_json_schema()
+        schema_text = json.dumps({
+            k: v for k, v in schema_dict["properties"].items() 
+            if k in ["answer", "sections", "suggestions", "is_fallback"]
+        }, indent=2)
         system_prompt_header = f"""
 Today's date is {datetime.now().strftime("%B %d, %Y")}.
 

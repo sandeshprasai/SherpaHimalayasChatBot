@@ -148,82 +148,27 @@ class VectorRetriever:
 
     @staticmethod
     def _build_text(data: dict) -> str:
-        
         lines = []
+        
+        # System keys that shouldn't be indexed directly as raw text
+        ignore_keys = {"id", "embedding_chunks", "raw_data", "type"}
 
-        def add(label, value):
-            if value:
-                lines.append(f"{label}: {value}")
+        def flatten(obj, prefix=""):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k not in ignore_keys:
+                        clean_key = k.replace("_", " ").upper()
+                        flatten(v, prefix=f"{clean_key}: ")
+            elif isinstance(obj, list):
+                for item in obj:
+                    flatten(item, prefix=f"{prefix}- ")
+            else:
+                if obj is not None and str(obj).strip():
+                    lines.append(f"{prefix}{str(obj).strip()}")
 
-        add("TITLE",    data.get("title"))
-        add("TYPE",     data.get("type"))
-        add("CATEGORY", data.get("category"))
-        add("REGION",   data.get("region"))
-
-       
-        duration_val = data.get("duration_days")
-        if duration_val is not None:
-            try:
-                days   = int(duration_val)
-                suffix = "day" if days == 1 else "days"
-            except Exception:
-                days, suffix = duration_val, "days"
-            lines.append(f"DURATION: {days} {suffix}")
-
-        add("DIFFICULTY",   data.get("difficulty"))
-        add("MAX ALTITUDE", f"{data['max_altitude_m']} m" if data.get("max_altitude_m") else None)
-        add("SUMMARY",      data.get("summary"))
-
-       
-        for section in data.get("content_sections", []):
-            if not isinstance(section, dict):
-                continue
-            heading = section.get("heading", "")
-            text    = section.get("text", "").strip()
-            if heading and text:
-                lines.append(f"{heading.upper()}:\n{text}")
-            elif text:
-                lines.append(text)
-
-       
-        raw_attrs = data.get("attributes")
-        if isinstance(raw_attrs, dict):
-            for k, v in raw_attrs.items():
-                if k and v:
-                    lines.append(f"{k}: {v}")
-        elif isinstance(raw_attrs, list):
-            for attr in raw_attrs:
-                if not isinstance(attr, dict):
-                    continue
-                k = attr.get("label") or attr.get("key", "")
-                v = attr.get("value", "")
-                if k and v:
-                    lines.append(f"{k}: {v}")
-
-       
-        highlights = data.get("highlights", [])
-        if highlights:
-            add("TRIP HIGHLIGHTS", ", ".join(h for h in highlights if h))
-
-        itinerary = data.get("itinerary", [])
-        if itinerary:
-            itin_lines = [
-                f"Day {d.get('day', '?')}: {d.get('title', '')} — {d.get('description', '')}"
-                for d in itinerary
-                if isinstance(d, dict) and (d.get("title") or d.get("description"))
-            ]
-            if itin_lines:
-                lines.append("FULL ITINERARY:\n" + "\n".join(itin_lines))
-
-        includes = data.get("includes", [])
-        if includes:
-            add("INCLUSIONS", ", ".join(i for i in includes if i))
-
-        excludes = data.get("excludes", [])
-        if excludes:
-            add("EXCLUSIONS", ", ".join(e for e in excludes if e))
-
-       
+        flatten(data)
+        
+        # Append pre-computed embedding chunks if they exist
         joined = "\n".join(lines)
         for chunk in data.get("embedding_chunks", []):
             if not isinstance(chunk, dict):

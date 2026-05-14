@@ -13,10 +13,16 @@ class HybridRetriever:
         candidates = self._meta.filter_by_logic(req.filters)
         
         if req.intent == QueryIntent.AGGREGATE:
-            field = req.agg_field or "duration_days"
-            reverse = (req.agg_op == "max")
-            candidates = [c for c in candidates if c.get(field)]
-            candidates.sort(key=lambda x: x[field], reverse=reverse)
+            if req.agg_field and req.agg_field in self._meta.schema_keys:
+                field = req.agg_field
+            else:
+                numeric_keys = [k for k in self._meta.schema_keys if any(isinstance(c.get(k), (int, float)) for c in candidates)]
+                field = numeric_keys[0] if numeric_keys else None
+            
+            if field:
+                reverse = (getattr(req, 'agg_op', 'max') == "max")
+                candidates = [c for c in candidates if c.get(field) is not None]
+                candidates.sort(key=lambda x: x[field], reverse=reverse)
 
         elif req.intent == QueryIntent.FILTER:
             query_text = req.normalized or req.text

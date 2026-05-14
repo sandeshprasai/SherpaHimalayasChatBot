@@ -104,17 +104,18 @@ class Pipeline:
         structured_output, tokens = self.generator.generate(prompt)
         normalized = self.response_normalizer.normalize(structured_output)
 
-
+        detected_fallback = normalized.get("is_fallback", False)
+        if detected_fallback:
+            from src.generation.generator import FALLBACK_MESSAGE
+            normalized["answer"] = FALLBACK_MESSAGE
         
         return QueryResponse(
-    answer=normalized["answer"],
-    sections=normalized["sections"],
-    suggestions=normalized["suggestions"],
-
-    # preserve existing behavior
-    sources=source_nodes,
-
-    strategy=strategy,
-    used_llm=True,
-    is_fallback=False
-)
+            answer=normalized["answer"],
+            sections=normalized["sections"],
+            suggestions=normalized["suggestions"],
+            sources=source_nodes,
+            strategy=strategy,
+            used_llm=True,
+            is_fallback=detected_fallback,
+            tokens_used=tokens
+        )

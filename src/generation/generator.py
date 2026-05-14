@@ -16,32 +16,12 @@ for _p in (_SRC, _ROOT):
 
 from src.config.settings import settings
 
-FALLBACK_PHRASES = [
-    "i don't have that information",
-    "i do not have that information",
-    "not specified in the provided context",
-    "i cannot find",
-    "no information available",
-    "i'm sorry, but i don't",
-    "i am sorry, but i don't",
-    "i'm sorry, but i do not",
-    "i am sorry, but i do not",
-    "namaste. i'm sorry",
-    "namaste. i am sorry",
-    "don't have information on that",
-    "do not have information on that",
-    "not in our records",
-    "not available in the context",
-]
-
 FALLBACK_MESSAGE = (
     f"Namaste! I'm sorry, but I don't have that specific information "
     f"in our records. Please contact our team at "
     f"**{settings.company_email}** — we'd love to help you plan "
     f"your Himalayan adventure! 🏔️"
 )
-
-
 class Generator:
 
 
@@ -86,9 +66,10 @@ class Generator:
         return parsed, tokens
 
 
-    def is_fallback(self, text: str) -> bool:
-        tl = text.lower()
-        return any(p in tl for p in FALLBACK_PHRASES)
+    def is_fallback(self, parsed_json: dict) -> bool:
+        if isinstance(parsed_json, dict):
+            return parsed_json.get("is_fallback", False)
+        return False
 
     def count_tokens(self, text: str) -> int:
         try:
@@ -98,13 +79,18 @@ class Generator:
             
             return max(1, len(str(text)) // 4)
 
-    def is_fallback(self, text: str) -> bool:
-        tl = text.lower()
-        return any(p in tl for p in FALLBACK_PHRASES)
+    def is_fallback(self, parsed_json: dict) -> bool:
+        # Trust the LLM's structured output flag instead of regex string matching
+        if isinstance(parsed_json, dict):
+            return parsed_json.get("is_fallback", False)
+        return False
 
     def count_tokens(self, text: str) -> int:
-        self._ensure_ready()
-        return len(self._enc.encode(str(text)))
+        try:
+            self._ensure_ready()
+            return len(self._enc.encode(str(text)))
+        except Exception:
+            return max(1, len(str(text)) // 4)
 
     def estimate_cost(self, tokens: int) -> float:
         return (tokens / 1_000_000) * 0.59
