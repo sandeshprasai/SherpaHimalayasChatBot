@@ -15,6 +15,7 @@ import os
 from typing import List
 from pydantic_settings import BaseSettings
 
+from pydantic import Field
 
 # =============================================================================
 # Disable telemetry / analytics noise
@@ -75,7 +76,7 @@ class Settings(BaseSettings):
     # SECURITY
     # =========================================================================
 
-    API_KEY: str = "supersecretapikey"
+    API_KEY: str = Field(..., description="Must be set in .env for production security")
 
     # =========================================================================
     # GROQ

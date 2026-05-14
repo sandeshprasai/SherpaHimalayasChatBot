@@ -1,6 +1,6 @@
 import time
 from fastapi import APIRouter, Depends, HTTPException, status ,Request
-
+from fastapi.concurrency import run_in_threadpool
 from src.api.schemas.chat import ChatRequest, ChatResponse, SourceDocument
 from src.api.dependencies import get_pipeline, limiter
 from src.core.pipeline import Pipeline
@@ -32,7 +32,7 @@ async def chat(
     start = time.time()
 
     try:
-        result = pipeline.run(body.message)
+        result = await run_in_threadpool(pipeline.run, body.message)
     except Exception as e:
         logger.error(f"Pipeline error for query='{body.message[:80]}': {e}", exc_info=True)
         raise HTTPException(
@@ -64,12 +64,24 @@ async def chat(
         f"| tokens={result.tokens_used}"
     )
 
-    return ChatResponse(
-        success=True,
-        answer=result.answer,
-        sections=result.sections,
-        suggestions=result.suggestions,
-        sources=sources,
-        latency_ms=latency_ms,
-        is_fallback=result.is_fallback
-    )
+    try:
+        return ChatResponse(
+            success=True,
+            answer=result.answer,
+            sections=result.sections,
+            suggestions=result.suggestions,
+            sources=sources,
+            latency_ms=latency_ms,
+            is_fallback=result.is_fallback
+        )
+    except Exception as e:
+        logger.error(f"Response validation failed, falling back. Error: {e}")
+        return ChatResponse(
+            success=True,
+            answer=str(result.answer) if result.answer else "Here is the information you requested.",
+            sections=[],
+            suggestions=[],
+            sources=sources,
+            latency_ms=latency_ms,
+            is_fallback=True
+        )

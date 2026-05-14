@@ -28,7 +28,9 @@ class PromptBuilder:
 """
 
         # SYSTEM PROMPT
-        system_prompt = f"""
+        # SYSTEM PROMPT
+        # Do not use f-strings around the schema text to prevent format specifier crashes.
+        system_prompt_header = f"""
 Today's date is {datetime.now().strftime("%B %d, %Y")}.
 
 You are the {self.company} {self.sys_name}.
@@ -54,9 +56,9 @@ You are the {self.company} {self.sys_name}.
 Return ONLY valid JSON.
 
 Schema:
+"""
 
-{schema_text}
-
+        system_prompt_footer = """
 ### RULES
 
 - Do NOT return markdown
@@ -68,8 +70,8 @@ Schema:
 - sections must always be an array
 - items must always be an array
 """
+        system_prompt = system_prompt_header + "\n" + schema_text + "\n" + system_prompt_footer
 
-        # CONTEXT RECORDS
         context_data = ""
 
         for i, node in enumerate(source_nodes, 1):
@@ -81,7 +83,6 @@ RECORD {i}
 {node.text}
 """
 
-        # FINAL PROMPT
         full_prompt = f"""
 {system_prompt}
 

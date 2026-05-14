@@ -12,6 +12,7 @@ the bot couldn't find an answer. These are knowledge base gaps to fill.
 
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 
 LOG_DIR = "data/logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -20,6 +21,11 @@ os.makedirs(LOG_DIR, exist_ok=True)
 fmt = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
 
 # ── Main application logger ───────────────────────────────────────────────
+logger = logging.getLogger("sherpa-chatbot")
+logger.setLevel(logging.INFO)
+
+# Rotate at 10MB, keep 5 backups
+_app_file = RotatingFileHandler(os.path.join(LOG_DIR, "app.log"), maxBytes=10*1024*1024, backupCount=5, encoding="utf-8")
 logger = logging.getLogger("sherpa-chatbot")
 logger.setLevel(logging.INFO)
 
