@@ -57,7 +57,8 @@ class VectorRetriever:
                 text=n.node.get_content(),
                 score=round(n.score, 4) if n.score else None,
                 source_id=n.node.metadata.get("id"),
-                title=self._extract_title(n.node.get_content()),
+                title=n.node.metadata.get("title") or "Unknown",
+                metadata=n.node.metadata.get("raw_data", {})
             )
             for n in raw_nodes
         ]
@@ -137,6 +138,7 @@ class VectorRetriever:
                                 "type":           item.get("type", "trek"),
                                 "category":       item.get("category", ""),
                                 "duration_days":  item.get("duration_days"),
+                                "raw_data": item
                             },
                         )
                         documents.append(doc)

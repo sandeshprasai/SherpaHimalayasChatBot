@@ -1,7 +1,7 @@
 
 from typing import List, Optional
 from pydantic import BaseModel, Field
-
+from typing import Any, Dict
 
 class ChatRequest(BaseModel):
     message: str = Field(
@@ -27,20 +27,38 @@ class SourceDocument(BaseModel):
     source: Optional[str] = Field(None, description="Source ID or URL")
 
 
+class UISection(BaseModel):
+    type: str = Field(..., description="cards | table | list | text")
+    title: Optional[str] = None
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    content: Optional[str] = None
+
+
 class ChatResponse(BaseModel):
-    """Standard response envelope for all /chat requests."""
-    success: bool = Field(..., description="True if the request was processed without errors")
-    response: str = Field(..., description="The AI-generated answer")
-    sources: List[SourceDocument] = Field(
-        default_factory=list,
-        description="Source documents used to generate the answer"
-    )
-    latency_ms: int = Field(..., description="Server-side processing time in milliseconds")
-    is_fallback: bool = Field(
-        default=False,
-        description="True when the bot couldn't find an answer in its knowledge base"
+    success: bool = Field(...)
+
+    answer: str = Field(
+        ...,
+        description="Human-readable AI summary"
     )
 
+    sections: List[UISection] = Field(
+        default_factory=list,
+        description="Structured semantic UI blocks"
+    )
+
+    suggestions: List[str] = Field(
+        default_factory=list,
+        description="Suggested follow-up queries"
+    )
+
+    sources: List[SourceDocument] = Field(
+        default_factory=list
+    )
+
+    latency_ms: int = Field(...)
+
+    is_fallback: bool = Field(default=False)
     class Config:
         json_schema_extra = {
             "example": {

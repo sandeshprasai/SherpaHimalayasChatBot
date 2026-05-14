@@ -1,18 +1,20 @@
 import os
 from typing import Any
 from src.core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy
-from src.generation.prompt_builder import PromptBuilder
 from src.retrieval.metadata import MetadataRetriever
 from src.understanding.classifier import classify
 from src.understanding.normalizer import normalize
 from src.generation.generator import Generator
 from src.config.settings import settings
+from src.generation.response_normalizer import ResponseNormalizer
+
 
 class Pipeline:
     def __init__(self, debug: bool = False):
         self.debug = debug
         self.meta_engine = MetadataRetriever()
         self.generator = Generator()
+        self.response_normalizer = ResponseNormalizer()
         self._vec = None
 
     def _recursive_flatten(self, data: Any, depth: int = 0) -> str:
@@ -42,7 +44,6 @@ class Pipeline:
         norm_text = normalize(user_query, self.meta_engine._records)
         req = QueryRequest(text=user_query, normalized=norm_text)
         
-        # 1. Classification & Query Enhancement
         classify(req, self.meta_engine.schema_keys)
         
         if self.debug: 
@@ -52,16 +53,22 @@ class Pipeline:
         source_nodes = []
         strategy = RetrievalStrategy.VECTOR
 
-        # 2. Metadata Lookup
         if req.plan.filters or req.plan.sort_field:
             strategy = RetrievalStrategy.METADATA
             raw_data = self.meta_engine.execute_plan(req.plan)
             source_nodes = [
-                SourceNode(text=self._recursive_flatten(d), title=d.get("title") or d.get("name"), source_id=d.get("id"))
-                for d in raw_data
+                SourceNode(
+            text=self._recursive_flatten(d),
+
+            # preserve structured data
+            metadata=d,
+
+            title=d.get("title") or d.get("name"),
+            source_id=d.get("id")
+        )
+        for d in raw_data
             ]
 
-        # 3. Vector Retrieval (USING ENHANCED QUERY)
         if not source_nodes or req.plan.needs_semantic_search:
             if source_nodes: strategy = RetrievalStrategy.HYBRID
             try:
@@ -83,12 +90,31 @@ class Pipeline:
             return QueryResponse(answer=f"No results found for enhanced query. Contact {settings.company_email}.", is_fallback=True)
 
         from generation.prompt_builder import PromptBuilder
+        for node in source_nodes:
+            if not node.title or node.title == "Unknown":
+       
+                for line in node.text.splitlines():
+                     if "TITLE:" in line:
+                        node.title = line.replace("TITLE:", "").strip()
+                        break
+                    
+        
         builder = PromptBuilder()
         prompt = builder.build(req, source_nodes)
-        answer, tokens = self.generator.generate(prompt)
+        structured_output, tokens = self.generator.generate(prompt)
+        normalized = self.response_normalizer.normalize(structured_output)
+
+
         
         return QueryResponse(
-            answer=answer, sources=source_nodes, tokens_used=tokens,
-            cost_usd=(tokens / 1_000_000) * 0.59,
-            used_llm=True, intent=req.plan.intent, strategy=strategy
-        )
+    answer=normalized["answer"],
+    sections=normalized["sections"],
+    suggestions=normalized["suggestions"],
+
+    # preserve existing behavior
+    sources=source_nodes,
+
+    strategy=strategy,
+    used_llm=True,
+    is_fallback=False
+)

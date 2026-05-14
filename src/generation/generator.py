@@ -1,23 +1,10 @@
-"""
-generation/generator.py
-────────────────────────
-LLM interaction layer. Wraps Groq via LlamaIndex.
-
-Responsibilities:
-  - Initialize and return the LLM (once)
-  - Generate a response given a prompt string
-  - Count tokens and compute cost
-  - Detect fallback responses
-
-Usage:
-    from generation.generator import Generator
-
-    gen = Generator()
-    answer, tokens = gen.generate(prompt)
-"""
-
 import os
 import sys
+import json
+import re
+from typing import Dict, Any
+from src.services.logger import logger
+
 
 # ── path setup ───────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -29,10 +16,6 @@ for _p in (_SRC, _ROOT):
 
 from src.config.settings import settings
 
-
-
-# ── Fallback phrases — if LLM output contains any of these,
-#    the pipeline treats the response as a fallback ─────────────────────────
 FALLBACK_PHRASES = [
     "i don't have that information",
     "i do not have that information",
@@ -60,9 +43,7 @@ FALLBACK_MESSAGE = (
 
 
 class Generator:
-    """
-    Wraps the Groq LLM. Instantiate once and reuse across requests.
-    """
+
 
     def __init__(self):
         self._llm = None
@@ -72,49 +53,52 @@ class Generator:
     # PUBLIC
     # ──────────────────────────────────────────────────────────────────────
 
-    def generate(self, prompt: str) -> tuple[str, int]:
-        """
-        Send prompt to LLM and return (answer_text, token_count).
-        token_count is an estimate based on tiktoken.
-        """
-        # Ensure LLM is initialized, but handle initialization failures
-        # gracefully so the pipeline can fall back to content-based answers.
+    def generate(self, prompt: str) -> tuple[Dict[str, Any], int]:
+        
         try:
             self._ensure_ready()
         except Exception as e:
-            # Initialization failed (missing libs or misconfiguration).
-            # Return a safe fallback so the pipeline can continue.
+            
             return FALLBACK_MESSAGE, 0
+        
+        response = self._llm.complete(prompt)
+        raw_text = str(response).strip()
+        clean_json = re.sub(r"^```json\s*|\s*```$", "", raw_text, flags=re.IGNORECASE | re.MULTILINE).strip()
 
         try:
-            response = self._llm.complete(prompt)
-            answer   = str(response).strip()
+            parsed = json.loads(clean_json)
         except Exception:
-            # If the LLM call fails for any reason, return a safe fallback
-            # message so the pipeline can handle it uniformly.
-            return FALLBACK_MESSAGE, 0
+            match = re.search(r"\{.*\}", clean_json, re.DOTALL)
+            if match:
+                parsed = json.loads(match.group())
+            else:
+                raise ValueError("No JSON block found")
 
-        tokens = self.count_tokens(prompt) + self.count_tokens(answer)
-        return answer, tokens
+        except Exception as e:
+            logger.error(f"LLM Generation/Parsing failed: {e}")
+            parsed = {
+            "answer": raw_text, # Fallback to raw text if all parsing fails
+            "sections": [],
+            "suggestions": []
+        }
+
+        tokens = self.count_tokens(prompt) + self.count_tokens(raw_text)
+        return parsed, tokens
+
 
     def is_fallback(self, text: str) -> bool:
-        """Return True if the LLM admitted it could not answer."""
         tl = text.lower()
         return any(p in tl for p in FALLBACK_PHRASES)
 
     def count_tokens(self, text: str) -> int:
-        # Counting tokens normally requires the encoder; if the encoder
-        # isn't available due to LLM init errors, fall back to a rough
-        # estimate (len/4).
         try:
             self._ensure_ready()
             return len(self._enc.encode(str(text)))
         except Exception:
-            # rough estimate: average 4 chars per token
+            
             return max(1, len(str(text)) // 4)
 
     def is_fallback(self, text: str) -> bool:
-        """Return True if the LLM admitted it could not answer."""
         tl = text.lower()
         return any(p in tl for p in FALLBACK_PHRASES)
 
@@ -123,20 +107,12 @@ class Generator:
         return len(self._enc.encode(str(text)))
 
     def estimate_cost(self, tokens: int) -> float:
-        """
-        Rough cost estimate in USD.
-        Groq llama-3.3-70b pricing as of 2025: ~$0.59 / 1M tokens.
-        """
         return (tokens / 1_000_000) * 0.59
 
     def get_llm(self):
-        """Expose raw LLM for LlamaIndex chat engine if needed."""
         self._ensure_ready()
         return self._llm
 
-    # ──────────────────────────────────────────────────────────────────────
-    # PRIVATE
-    # ──────────────────────────────────────────────────────────────────────
 
     def _ensure_ready(self):
         if self._llm is not None:

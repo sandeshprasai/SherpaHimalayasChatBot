@@ -66,7 +66,9 @@ async def chat(
 
     return ChatResponse(
         success=True,
-        response=result.answer,
+        answer=result.answer,
+        sections=result.sections,
+        suggestions=result.suggestions,
         sources=sources,
         latency_ms=latency_ms,
         is_fallback=result.is_fallback

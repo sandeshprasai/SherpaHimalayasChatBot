@@ -172,7 +172,7 @@ class Settings(BaseSettings):
     # =========================================================================
 
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(PROJECT_ROOT, ".env")
         extra = "ignore"
 
     # =========================================================================

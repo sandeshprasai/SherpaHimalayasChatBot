@@ -24,7 +24,7 @@ class DataExecutionPlan:
     limit: int = 5
     needs_semantic_search: bool = True
     intent: QueryIntent = QueryIntent.GENERAL
-    search_query: str = "" # <--- NEW: The LLM-enhanced search string
+    search_query: str = "" 
     reasoning: str = ""
 
 @dataclass
@@ -39,17 +39,30 @@ class QueryRequest:
 @dataclass
 class SourceNode:
     text: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
     title: Optional[str] = None
     score: Optional[float] = None
     source_id: Optional[str] = None
 
 @dataclass
+class StructuredSection:
+    type: str
+    title: Optional[str] = None
+    items: List[Dict[str, Any]] = field(default_factory=list)
+    content: Optional[str] = None
+
+
+@dataclass
 class QueryResponse:
     answer: str
+    sections: List[StructuredSection] = field(default_factory=list)
+    suggestions: List[str] = field(default_factory=list)
     sources: List[SourceNode] = field(default_factory=list)
+
     tokens_used: int = 0
     cost_usd: float = 0.0
     used_llm: bool = True
     is_fallback: bool = False
+
     intent: QueryIntent = QueryIntent.GENERAL
     strategy: RetrievalStrategy = RetrievalStrategy.VECTOR
