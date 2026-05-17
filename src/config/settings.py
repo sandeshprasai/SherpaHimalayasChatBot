@@ -1,21 +1,9 @@
-"""
-src/config/settings.py
-──────────────────────
-Centralized application configuration for:
-- FastAPI
-- RAG pipeline
-- ChromaDB
-- LLMs
-- Production deployment
-"""
-
 import importlib
 import os
 
 from typing import List
-from pydantic_settings import BaseSettings
-
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # =============================================================================
 # Disable telemetry / analytics noise
@@ -58,43 +46,49 @@ PROJECT_ROOT = os.path.abspath(
 
 class Settings(BaseSettings):
 
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(PROJECT_ROOT, ".env"),
+        extra="ignore",
+        case_sensitive=False
+    )
+
     # =========================================================================
     # APP
     # =========================================================================
 
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    ENVIRONMENT: str = Field(..., env="ENVIRONMENT")
+    DEBUG: bool = Field(..., env="DEBUG")
 
     # =========================================================================
     # SERVER
     # =========================================================================
 
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    HOST: str = Field(..., env="HOST")
+    PORT: int = Field(..., env="PORT")
 
     # =========================================================================
     # SECURITY
     # =========================================================================
 
-    API_KEY: str = Field(..., description="Must be set in .env for production security")
+    API_KEY: str = Field(..., env="API_KEY")
 
     # =========================================================================
     # GROQ
     # =========================================================================
 
-    GROQ_API_KEY: str
+    GROQ_API_KEY: str = Field(..., env="GROQ_API_KEY")
 
     # =========================================================================
     # LOGGING
     # =========================================================================
 
-    LOG_LEVEL: str = "INFO"
+    LOG_LEVEL: str = Field(..., env="LOG_LEVEL")
 
     # =========================================================================
     # CORS
     # =========================================================================
 
-    ALLOWED_ORIGINS: str = ""
+    ALLOWED_ORIGINS: str = Field(..., env="ALLOWED_ORIGINS")
 
     # =========================================================================
     # PROJECT ROOT
@@ -106,75 +100,106 @@ class Settings(BaseSettings):
     # DATA DIRECTORIES
     # =========================================================================
 
-    data_dir: str = os.path.join(PROJECT_ROOT, "data")
+    data_dir: str = Field(
+        default=os.path.join(PROJECT_ROOT, "data"),
+        env="DATA_DIR"
+    )
 
-    rag_ready_dir: str = os.path.join(
-        PROJECT_ROOT,
-        "data/datasets/rag_ready"
+    rag_ready_dir: str = Field(
+        default=os.path.join(
+            PROJECT_ROOT,
+            "data/datasets/rag_ready"
+        ),
+        env="RAG_READY_DIR"
     )
 
     # =========================================================================
     # INDEXES
     # =========================================================================
 
-    vector_db_dir: str = os.path.join(
-        PROJECT_ROOT,
-        "data/indexes/chroma/vector_db"
+    vector_db_dir: str = Field(
+        ...,
+        env="CHROMA_DB_PATH"
     )
 
-    metadata_index: str = os.path.join(
-        PROJECT_ROOT,
-        "data/indexes/metadata/metadata_index.json"
+    metadata_index: str = Field(
+        ...,
+        env="METADATA_INDEX_PATH"
     )
 
-    cleaned_metadata_index: str = os.path.join(
-        PROJECT_ROOT,
-        "data/indexes/metadata/metadata_index.cleaned.json"
+    cleaned_metadata_index: str = Field(
+        default=os.path.join(
+            PROJECT_ROOT,
+            "data/indexes/metadata/metadata_index.cleaned.json"
+        ),
+        env="CLEANED_METADATA_INDEX_PATH"
     )
 
     # =========================================================================
     # MODEL CONFIG
     # =========================================================================
 
-    llm_model: str = "llama-3.3-70b-versatile"
+    llm_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        env="LLM_MODEL"
+    )
 
-    llm_temperature: float = 0.1
+    llm_temperature: float = Field(
+        default=0.1,
+        env="LLM_TEMPERATURE"
+    )
 
-    llm_max_tokens: int = 1024
+    llm_max_tokens: int = Field(
+        default=1024,
+        env="LLM_MAX_TOKENS"
+    )
 
-    embed_model: str = "BAAI/bge-small-en-v1.5"
+    embed_model: str = Field(
+        default="BAAI/bge-small-en-v1.5",
+        env="EMBED_MODEL"
+    )
 
     # =========================================================================
     # RETRIEVAL CONFIG
     # =========================================================================
 
-    similarity_top_k: int = 5
+    similarity_top_k: int = Field(
+        default=5,
+        env="SIMILARITY_TOP_K"
+    )
 
-    chroma_collection: str = "sherpaknowledge"
+    chroma_collection: str = Field(
+        ...,
+        env="CHROMA_COLLECTION"
+    )
 
     # =========================================================================
     # BRANDING
     # =========================================================================
 
-    company_email: str = "info@sherpahimalayas.com"
+    company_email: str = Field(
+        ...,
+        env="COMPANY_EMAIL"
+    )
 
-    company_name: str = "Sherpa Himalaya"
+    company_name: str = Field(
+        ...,
+        env="COMPANY_NAME"
+    )
 
-    system_name: str = "Travel Information System"
+    system_name: str = Field(
+        ...,
+        env="SYSTEM_NAME"
+    )
 
     # =========================================================================
     # RATE LIMITING
     # =========================================================================
 
-    daily_token_limit: int = 100_000
-
-    # =========================================================================
-    # ENV FILE
-    # =========================================================================
-
-    class Config:
-        env_file = os.path.join(PROJECT_ROOT, ".env")
-        extra = "ignore"
+    daily_token_limit: int = Field(
+        default=100000,
+        env="DAILY_TOKEN_LIMIT"
+    )
 
     # =========================================================================
     # Parsed CORS Origins
