@@ -16,9 +16,18 @@ class PromptBuilder:
     def build(self, req, source_nodes):
         schema_dict = ChatResponse.model_json_schema()
         schema_text = json.dumps({
-            k: v for k, v in schema_dict["properties"].items() 
-            if k in ["answer", "sections", "suggestions", "is_fallback"]
-        }, indent=2)
+    "answer": "A clear, conversational summary answering the user's question.",
+    "sections": [
+        {
+            "type": "cards | list | table | text",
+            "title": "Section title",
+            "items": [{"key": "value"}],
+            "content": "Optional text for 'text' type sections"
+        }
+    ],
+    "suggestions": ["Follow-up question 1?", "Follow-up question 2?"],
+    "is_fallback": False
+}, indent=2)
         system_prompt_header = f"""
 Today's date is {datetime.now().strftime("%B %d, %Y")}.
 

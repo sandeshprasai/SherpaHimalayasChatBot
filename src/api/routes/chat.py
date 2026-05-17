@@ -32,18 +32,19 @@ async def chat(
     start = time.time()
 
     try:
-        result = await run_in_threadpool(pipeline.run, body.message)
+        # CRITICAL FIX: You MUST 'await' the pipeline here.
+        # This replaces the old 'run_in_threadpool' and the sync call.
+        result = await pipeline.run(body.message)
     except Exception as e:
         logger.error(f"Pipeline error for query='{body.message[:80]}': {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred while processing your request. "
-                   "Please try again."
+            detail="An internal error occurred while processing your request."
         )
 
     latency_ms = round((time.time() - start) * 1000)
 
-   
+    # Now 'result' is a QueryResponse object, so .is_fallback will work!
     if result.is_fallback:
         fallback_logger.warning(
             f"FALLBACK | query='{body.message}' | latency={latency_ms}ms"
@@ -64,24 +65,12 @@ async def chat(
         f"| tokens={result.tokens_used}"
     )
 
-    try:
-        return ChatResponse(
-            success=True,
-            answer=result.answer,
-            sections=result.sections,
-            suggestions=result.suggestions,
-            sources=sources,
-            latency_ms=latency_ms,
-            is_fallback=result.is_fallback
-        )
-    except Exception as e:
-        logger.error(f"Response validation failed, falling back. Error: {e}")
-        return ChatResponse(
-            success=True,
-            answer=str(result.answer) if result.answer else "Here is the information you requested.",
-            sections=[],
-            suggestions=[],
-            sources=sources,
-            latency_ms=latency_ms,
-            is_fallback=True
-        )
+    return ChatResponse(
+        success=True,
+        answer=result.answer,
+        sections=result.sections,
+        suggestions=result.suggestions,
+        sources=sources,
+        latency_ms=latency_ms,
+        is_fallback=result.is_fallback
+    )

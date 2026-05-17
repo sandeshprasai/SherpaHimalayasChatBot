@@ -29,14 +29,20 @@ def get_pipeline() -> Pipeline:
         )
     return _pipeline_instance
 
-
 def initialize_pipeline() -> None:
-    
     global _pipeline_instance
     logger.info("Initializing AI Pipeline...")
     start = time.time()
     try:
         _pipeline_instance = Pipeline(debug=False)
+        
+        # FORCE WARMUP: This triggers the ChromaDB build/load immediately
+        logger.info("Warming up Vector Engine...")
+        if not _pipeline_instance._vec:
+            from src.retrieval.vector import VectorRetriever
+            _pipeline_instance._vec = VectorRetriever()
+        _pipeline_instance._vec._ensure_ready()
+        
         elapsed = round(time.time() - start, 2)
         logger.info(f"Pipeline ready in {elapsed}s")
     except Exception as e:

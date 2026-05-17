@@ -296,7 +296,6 @@ REGION_CONTENT_SIGNALS = (
 
 
 # ──────────────────────────── Main classifier ──────────────────────────────────
-
 def classify_file(filename: str, filepath: str) -> str:
     """
     Returns one of the CATEGORIES strings for the given file.

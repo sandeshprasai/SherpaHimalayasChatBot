@@ -150,13 +150,13 @@ class Settings(BaseSettings):
 
     similarity_top_k: int = 5
 
-    chroma_collection: str = "sherpa_knowledge"
+    chroma_collection: str = "sherpaknowledge"
 
     # =========================================================================
     # BRANDING
     # =========================================================================
 
-    company_email: str = "info@sherpahimalaya.com"
+    company_email: str = "info@sherpahimalayas.com"
 
     company_name: str = "Sherpa Himalaya"
 

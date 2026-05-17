@@ -33,7 +33,7 @@ class Generator:
     # PUBLIC
     # ──────────────────────────────────────────────────────────────────────
 
-    def generate(self, prompt: str) -> tuple[Dict[str, Any], int]:
+    async def generate(self, prompt: str) -> tuple[Dict[str, Any], int]:
         
         try:
             self._ensure_ready()

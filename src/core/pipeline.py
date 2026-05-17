@@ -8,6 +8,7 @@ from src.generation.generator import Generator
 from src.config.settings import settings
 from src.generation.response_normalizer import ResponseNormalizer
 
+        
 
 class Pipeline:
     def __init__(self, debug: bool = False):
@@ -40,11 +41,13 @@ class Pipeline:
             return "\n".join(items)
         return str(data)
 
-    def run(self, user_query: str) -> QueryResponse:
+    async def run(self, user_query: str) -> QueryResponse:
         norm_text = normalize(user_query, self.meta_engine._records)
         req = QueryRequest(text=user_query, normalized=norm_text)
         
-        classify(req, self.meta_engine.schema_keys)
+        await classify(req, self.meta_engine.schema_keys)
+        print(f"🔍 DEBUG: Original Query: {user_query}")
+        print(f"🔍 DEBUG: Enhanced Search Query: {req.plan.search_query}")
         
         if self.debug: 
             print(f"  [Original] {user_query}")
@@ -77,7 +80,8 @@ class Pipeline:
                     self._vec = VectorRetriever()
                 
                 # USE ENHANCED QUERY HERE
-                vec_results = self._vec.search(req.plan.search_query)
+                vec_results = await  self._vec.search(req.plan.search_query)
+                print(f"📊 DEBUG: Vector Search found {len(vec_results)} raw nodes.")
                 
                 existing_titles = [n.title for n in source_nodes if n.title]
                 for vn in vec_results:
@@ -89,7 +93,8 @@ class Pipeline:
         if not source_nodes:
             return QueryResponse(answer=f"No results found for enhanced query. Contact {settings.company_email}.", is_fallback=True)
 
-        from generation.prompt_builder import PromptBuilder
+        from src.generation.prompt_builder import PromptBuilder
+
         for node in source_nodes:
             if not node.title or node.title == "Unknown":
        
@@ -101,7 +106,7 @@ class Pipeline:
         
         builder = PromptBuilder()
         prompt = builder.build(req, source_nodes)
-        structured_output, tokens = self.generator.generate(prompt)
+        structured_output, tokens = await self.generator.generate(prompt)
         normalized = self.response_normalizer.normalize(structured_output)
 
         detected_fallback = normalized.get("is_fallback", False)

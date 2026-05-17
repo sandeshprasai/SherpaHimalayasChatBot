@@ -24,7 +24,7 @@ class VectorRetriever:
         self._engine = None   # LlamaIndex retriever engine
 
     
-    def search(
+    async def search(
         self,
         query: str,
         top_k: int | None = None,
@@ -56,13 +56,12 @@ class VectorRetriever:
             SourceNode(
                 text=n.node.get_content(),
                 score=round(n.score, 4) if n.score else None,
-                source_id=n.node.metadata.get("id"),
+                source_id=n.node.metadata.get("source_id"),
                 title=n.node.metadata.get("title") or "Unknown",
-                metadata=n.node.metadata.get("raw_data", {})
+                metadata=n.node.metadata
             )
             for n in raw_nodes
         ]
-
     def get_index(self):
         
         self._ensure_ready()
@@ -78,42 +77,53 @@ class VectorRetriever:
         from llama_index.core import VectorStoreIndex, StorageContext, Settings
         from llama_index.vector_stores.chroma import ChromaVectorStore
         from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+        from llama_index.core.node_parser import SentenceSplitter
 
-        Settings.embed_model = HuggingFaceEmbedding(
-            model_name=settings.embed_model
-        )
+        # 1. Pipeline Settings
+        Settings.embed_model = HuggingFaceEmbedding(model_name=settings.embed_model)
+        # We use a large chunk size to avoid metadata length errors
+        Settings.node_parser = SentenceSplitter(chunk_size=4096, chunk_overlap=200)
 
         os.makedirs(settings.vector_db_dir, exist_ok=True)
-        db         = chromadb.PersistentClient(path=settings.vector_db_dir)
+        
+        db = chromadb.PersistentClient(path=settings.vector_db_dir)
         collection = db.get_or_create_collection(settings.chroma_collection)
-        vector_store    = ChromaVectorStore(chroma_collection=collection)
+        
+        # 2. Storage Context with BATCHING fix
+        vector_store = ChromaVectorStore(chroma_collection=collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
         if collection.count() == 0:
-            print("📥 Building new ChromaDB index...")
+            print(f"🔍 Scanning {settings.rag_ready_dir}...")
             docs = self._load_documents()
+            print(f"📥 Found {len(docs)} valid documents. Generating Embeddings...")
+            
+            # 3. FIX: Use show_progress and manual batching is handled by LlamaIndex
+            # when we pass the storage_context properly.
             self._index = VectorStoreIndex.from_documents(
                 docs,
                 storage_context=storage_context,
                 show_progress=True,
+                # Force smaller insert batches to stay under ChromaDB's 166 limit
+                insert_batch_size=100 
             )
+            print("✅ Vector Index built and saved.")
         else:
-            print(f"⚡ Loading existing index ({collection.count()} chunks)")
+            print(f"⚡ Loading existing Vector Index ({collection.count()} nodes)")
             self._index = VectorStoreIndex.from_vector_store(
                 vector_store,
                 storage_context=storage_context,
             )
 
-        self._engine = self._index.as_retriever(
-            similarity_top_k=settings.similarity_top_k
-        )
+        self._engine = self._index.as_retriever(similarity_top_k=settings.similarity_top_k)
 
     def _load_documents(self):
         from llama_index.core import Document
+        import json
         documents = []
 
         for root, _, files in os.walk(settings.rag_ready_dir):
-            for fname in sorted(files):
+            for fname in files:
                 if not fname.endswith(".json") or "metadata_index" in fname:
                     continue
 
@@ -122,60 +132,57 @@ class VectorRetriever:
                     with open(fpath, encoding="utf-8") as f:
                         data = json.load(f)
 
-                    
                     items = data if isinstance(data, list) else [data]
 
                     for item in items:
-                        if not isinstance(item, dict) or not item.get("title"):
-                            continue
-                        
                         text = self._build_text(item)
+                        if not text: continue
+
+                        print(f"📄 Indexing: {item.get('filename', 'Unknown')} ({len(text)} chars)")
+                        # Keep metadata extremely lightweight
+                        meta = item.get("meta_tags", {})
                         doc = Document(
                             text=text,
                             metadata={
-                                "id":             item.get("id", ""),
-                                "title":          item.get("title", ""),
-                                "type":           item.get("type", "trek"),
-                                "category":       item.get("category", ""),
-                                "duration_days":  item.get("duration_days"),
-                                "raw_data": item
-                            },
+                                "source_id": str(fname),
+                                "title": str(meta.get("title") or item.get("title") or "Unknown")
+                            }
                         )
+                        # Ensure metadata is never embedded to avoid length errors
+                        doc.excluded_embed_metadata_keys = ["f", "t"]
+                        doc.excluded_llm_metadata_keys = ["f", "t"]
+                        
                         documents.append(doc)
                 except Exception as e:
-                    print(f"  ⚠️  Skipping {fname}: {e}")
+                    print(f"  ⚠️ Skipping {fname}: {e}")
         return documents
 
     @staticmethod
     def _build_text(data: dict) -> str:
         lines = []
-        
-        # System keys that shouldn't be indexed directly as raw text
-        ignore_keys = {"id", "embedding_chunks", "raw_data", "type"}
+        meta = data.get("meta_tags", {})
+    
+        title = meta.get("title") or data.get("title", "")
+        lines.append(f"TITLE: {title}")
+        lines.append(f"REGION: {meta.get('primary_region', 'Nepal')}")
+    
+    # Add top-level content fields
+        for key in ("description", "overview", "content", "summary", "pricing", "price"):
+          val = data.get(key)
+          if val and isinstance(val, str):
+            lines.append(f"{key.upper()}: {val}")
+    
+    # Then meta_tags fields
+        summary = meta.get("detailed_summary") or meta.get("short_summary")
+        if summary:
+            lines.append(f"DESCRIPTION: {summary}")
 
-        def flatten(obj, prefix=""):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    if k not in ignore_keys:
-                        clean_key = k.replace("_", " ").upper()
-                        flatten(v, prefix=f"{clean_key}: ")
-            elif isinstance(obj, list):
-                for item in obj:
-                    flatten(item, prefix=f"{prefix}- ")
-            else:
-                if obj is not None and str(obj).strip():
-                    lines.append(f"{prefix}{str(obj).strip()}")
-
-        flatten(data)
-        
-        # Append pre-computed embedding chunks if they exist
-        joined = "\n".join(lines)
-        for chunk in data.get("embedding_chunks", []):
-            if not isinstance(chunk, dict):
-                continue
-            chunk_text = chunk.get("text", "").strip()
-            if chunk_text and chunk_text not in joined:
-                lines.append(chunk_text)
+        # Keep itinerary short
+        itin = meta.get("day_by_day_itinerary", [])
+        if isinstance(itin, list) and len(itin) > 0:
+            lines.append("ITINERARY OVERVIEW:")
+            for d in itin[:20]: # Limit to 20 days max to prevent massive chunks
+                lines.append(f"Day {d.get('day')}: {d.get('details')}")
 
         return "\n".join(lines)
 
