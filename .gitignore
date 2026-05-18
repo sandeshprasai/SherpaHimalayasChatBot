@@ -5,12 +5,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
+*.tar.gz
+*.zip
 # Virtual environments
 venv/
 env/
 ENV/
 ScrapperVenv/
+chatbot-delivery/
 
 # ----------------------
 # Jupyter Notebooks

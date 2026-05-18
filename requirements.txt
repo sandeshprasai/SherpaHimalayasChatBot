@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 # =====================================================
 # Core AI / RAG
@@ -19,7 +20,7 @@ groq==0.11.0
 sentence-transformers==3.0.1
 chromadb==0.5.5
 transformers==4.44.2
-torch==2.4.1
+torch==2.4.1+cpu
 
 # =====================================================
 # Tokenization

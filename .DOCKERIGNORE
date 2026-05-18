@@ -1,0 +1,47 @@
+# =============================================================================
+# .dockerignore — keep the build context lean
+# =============================================================================
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Data — never bake into the image
+data/
+
+# Secrets
+.env
+*.env
+
+# Dev / editor artifacts
+.git/
+.gitignore
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Test files
+tests/
+scripts/testing/
+
+# Docs
+readme.md
+*.md
