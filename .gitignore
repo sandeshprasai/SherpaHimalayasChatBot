@@ -60,14 +60,12 @@ dist/
 # ----------------------
 # Data (important for your project)
 # ----------------------
-data/raw/*
-data/processed/*
-data/vector_db/*
+# data/raw/*
+# data/processed/*
+# data/vector_db/*
 
 # Keep structure but allow specific files if needed
-!data/raw/.gitkeep
-!data/processed/.gitkeep
-!data/vector_db/.gitkeep
+
 
 # ----------------------
 # Large files
