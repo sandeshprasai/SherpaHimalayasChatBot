@@ -41,7 +41,7 @@ class VectorRetriever:
        
         fetch_k = k * 3 if prefer_types else k
         raw_nodes = await self._engine.aretrieve(query)
-        raw_nodes = raw_nodes[: (k * 3 if prefer_types else k)]
+        raw_nodes = raw_nodes[:k]
 
         # Promote preferred doc types to the front
         if prefer_types:
@@ -62,8 +62,7 @@ class VectorRetriever:
                 text=n.node.get_content(),
                 score=round(n.score, 4) if n.score else None,
                 source_id=n.node.metadata.get("source_id"),
-                title=n.node.metadata.get("title") or "Unknown",
-                metadata=n.node.metadata
+                title=n.node.metadata.get("title") or "Unknown"
             )
             for n in raw_nodes
         ]
@@ -77,49 +76,60 @@ class VectorRetriever:
     def _ensure_ready(self):
         if self._index is not None:
             return
-        
-       
         Settings.embed_model = HuggingFaceEmbedding(model_name=settings.embed_model)
-        
         Settings.node_parser = SentenceSplitter(
-        chunk_size=1024, 
-        chunk_overlap=50,
-        include_metadata=False 
-    )
+            chunk_size=1024, 
+            chunk_overlap=50,
+            include_metadata=False 
+        )
 
-        os.makedirs(settings.vector_db_dir, exist_ok=True)
+       
+        chroma_host = os.getenv("CHROMA_HOST")
+        if chroma_host:
+            db = chromadb.HttpClient(host=chroma_host, port=8000)
+        else:            
+            os.makedirs(settings.vector_db_dir, exist_ok=True)
+            db = chromadb.PersistentClient(path=settings.vector_db_dir)
+            print(f" Using local ChromaDB at {settings.vector_db_dir}")
         
-        db = chromadb.PersistentClient(path=settings.vector_db_dir)
         collection = db.get_or_create_collection(settings.chroma_collection)
         
-        
+       
         vector_store = ChromaVectorStore(chroma_collection=collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
+        
         if collection.count() == 0:
-            print(f"🔍 Scanning {settings.rag_ready_dir}...")
+            print(f"🔍 Vector store is empty. Scanning {settings.rag_ready_dir}...")
             docs = self._load_documents()
-            print(f"📥 Found {len(docs)} valid documents. Generating Embeddings...")
             
-            # 3. FIX: Use show_progress and manual batching is handled by LlamaIndex
-            # when we pass the storage_context properly.
-            self._index = VectorStoreIndex.from_documents(
-                docs,
-                storage_context=storage_context,
-                show_progress=True,
-                # Force smaller insert batches to stay under ChromaDB's 166 limit
-                insert_batch_size=100 
-            )
-            print("✅ Vector Index built and saved.")
+            if not docs:
+                print(" No valid documents found to index.")
+               
+                self._index = VectorStoreIndex.from_documents(
+                    [], storage_context=storage_context
+                )
+            else:
+                print(f" Generating embeddings for {len(docs)} documents...")
+               
+                self._index = VectorStoreIndex.from_documents(
+                    docs,
+                    storage_context=storage_context,
+                    show_progress=True,
+                    insert_batch_size=100 
+                )
+                print(" Vector Index built and saved.")
         else:
+            
             print(f"⚡ Loading existing Vector Index ({collection.count()} nodes)")
             self._index = VectorStoreIndex.from_vector_store(
                 vector_store,
                 storage_context=storage_context,
             )
 
-        self._engine = self._index.as_retriever(similarity_top_k=settings.similarity_top_k)
-
+        self._engine = self._index.as_retriever(
+            similarity_top_k=settings.similarity_top_k
+        )
     def _load_documents(self):
         from llama_index.core import Document
         import json
@@ -151,13 +161,13 @@ class VectorRetriever:
                                 "title": str(meta.get("title") or item.get("title") or "Unknown")
                             }
                         )
-                        # Ensure metadata is never embedded to avoid length errors
+                        
                         doc.excluded_embed_metadata_keys = ["f", "t"]
                         doc.excluded_llm_metadata_keys = ["f", "t"]
                         
                         documents.append(doc)
                 except Exception as e:
-                    print(f"  ⚠️ Skipping {fname}: {e}")
+                    print(f"   Skipping {fname}: {e}")
         return documents
 
     @staticmethod

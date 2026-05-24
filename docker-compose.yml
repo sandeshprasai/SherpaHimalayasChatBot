@@ -1,11 +1,6 @@
 version: "3.9"
 services:
 
-  # ---------------------------------------------------------------------------
-  # ONE-SHOT: Build indexes from rag_ready datasets
-  # Run this manually whenever your data changes:
-  #   docker compose run --rm indexer
-  # ---------------------------------------------------------------------------
   indexer:
     build:
       context: .
@@ -13,18 +8,10 @@ services:
     image: chatbot:latest
     env_file: .env
     volumes:
-      # The shared data volume — indexes are written here
       - chatbot_data:/app/data
-      # Bind-mount your local rag_ready folder so the indexer can read it.
-      # Change the left-hand path to wherever your JSON files live on the host.
       - ./data/datasets/rag_ready:/app/data/datasets/rag_ready:ro
     environment:
       - ENVIRONMENT=production
-      - DATA_DIR=/app/data
-      - RAG_READY_DIR=/app/data/datasets/rag_ready
-      - CHROMA_DB_PATH=/app/data/indexes/chroma/vector_db
-      - METADATA_INDEX_PATH=/app/data/indexes/metadata/metadata_index.json
-    # Run BOTH indexing steps then exit
     command: >
       sh -c "
         echo '=== Step 1: Building metadata index ===' &&
@@ -33,11 +20,9 @@ services:
         python -m scripts.indexing.build_vector_index &&
         echo '=== Indexing complete ==='
       "
-    restart: "no"   # One-shot — never auto-restart
+    restart: "no"
 
-  # ---------------------------------------------------------------------------
-  # MAIN: The chatbot API server
-  # ---------------------------------------------------------------------------
+
   chatbot:
     build:
       context: .
@@ -45,28 +30,19 @@ services:
     image: chatbot:latest
     env_file: .env
     volumes:
-      # Same shared volume — reads the indexes the indexer wrote
       - chatbot_data:/app/data
     ports:
       - "${PORT:-8000}:8000"
     environment:
       - ENVIRONMENT=production
-      - DATA_DIR=/app/data
-      - RAG_READY_DIR=/app/data/datasets/rag_ready
-      - CHROMA_DB_PATH=/app/data/indexes/chroma/vector_db
-      - METADATA_INDEX_PATH=/app/data/indexes/metadata/metadata_index.json
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
       interval: 30s
       timeout: 10s
-      start_period: 60s   # Give Gunicorn + ChromaDB warm-up time
+      start_period: 60s
       retries: 3
 
-# =============================================================================
-# Named volume — persists indexes between container restarts and image rebuilds.
-# The chatbot image itself contains NO data files.
-# =============================================================================
 volumes:
   chatbot_data:
     driver: local
