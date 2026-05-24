@@ -32,8 +32,6 @@ async def chat(
     start = time.time()
 
     try:
-        # CRITICAL FIX: You MUST 'await' the pipeline here.
-        # This replaces the old 'run_in_threadpool' and the sync call.
         result = await pipeline.run(body.message)
     except Exception as e:
         logger.error(f"Pipeline error for query='{body.message[:80]}': {e}", exc_info=True)
@@ -44,7 +42,6 @@ async def chat(
 
     latency_ms = round((time.time() - start) * 1000)
 
-    # Now 'result' is a QueryResponse object, so .is_fallback will work!
     if result.is_fallback:
         fallback_logger.warning(
             f"FALLBACK | query='{body.message}' | latency={latency_ms}ms"

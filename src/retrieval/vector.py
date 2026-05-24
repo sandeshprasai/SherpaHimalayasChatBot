@@ -36,7 +36,8 @@ class VectorRetriever:
 
        
         fetch_k = k * 3 if prefer_types else k
-        raw_nodes = self._engine.retrieve(query)[:fetch_k]
+        raw_nodes = await self._engine.aretrieve(query)
+        raw_nodes = raw_nodes[: (k * 3 if prefer_types else k)]
 
         # Promote preferred doc types to the front
         if prefer_types:

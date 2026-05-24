@@ -79,7 +79,6 @@ class Pipeline:
                     from src.retrieval.vector import VectorRetriever
                     self._vec = VectorRetriever()
                 
-                # USE ENHANCED QUERY HERE
                 vec_results = await  self._vec.search(req.plan.search_query)
                 print(f"📊 DEBUG: Vector Search found {len(vec_results)} raw nodes.")
                 

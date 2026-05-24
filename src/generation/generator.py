@@ -4,9 +4,11 @@ import json
 import re
 from typing import Dict, Any
 from src.services.logger import logger
+import tiktoken
+from dotenv import load_dotenv
+from llama_index.llms.groq import Groq
+from llama_index.core import Settings
 
-
-# ── path setup ───────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC  = os.path.abspath(os.path.join(_HERE, ".."))
 _ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
@@ -29,58 +31,59 @@ class Generator:
         self._llm = None
         self._enc = None
 
-    # ──────────────────────────────────────────────────────────────────────
-    # PUBLIC
-    # ──────────────────────────────────────────────────────────────────────
+   
 
     async def generate(self, prompt: str) -> tuple[Dict[str, Any], int]:
-        
         try:
             self._ensure_ready()
         except Exception as e:
-            
-            return FALLBACK_MESSAGE, 0
+            logger.error(f"Generator initialization failed: {e}")
+            return {
+                "answer": FALLBACK_MESSAGE,
+                "sections": [],
+                "suggestions": [],
+                "is_fallback": True
+            }, 0
         
-        response = self._llm.complete(prompt)
-        raw_text = str(response).strip()
-        clean_json = re.sub(r"^```json\s*|\s*```$", "", raw_text, flags=re.IGNORECASE | re.MULTILINE).strip()
-
         try:
-            parsed = json.loads(clean_json)
-        except Exception:
-            match = re.search(r"\{.*\}", clean_json, re.DOTALL)
-            if match:
-                parsed = json.loads(match.group())
-            else:
-                raise ValueError("No JSON block found")
+            response = await self._llm.acomplete(prompt)
+            raw_text = str(response).strip()
+            
+            clean_json = re.sub(r"^```json\s*|\s*```$", "", raw_text, flags=re.IGNORECASE | re.MULTILINE).strip()
 
+            try:
+                # Primary parsing attempt
+                parsed = json.loads(clean_json)
+            except json.JSONDecodeError:
+                # Secondary attempt: find the first { and last }
+                match = re.search(r"\{.*\}", clean_json, re.DOTALL)
+                if match:
+                    parsed = json.loads(match.group())
+                else:
+                   
+                    parsed = {
+                        "answer": raw_text, 
+                        "sections": [],
+                        "suggestions": [],
+                        "is_fallback": True
+                    }
+        
         except Exception as e:
-            logger.error(f"LLM Generation/Parsing failed: {e}")
+            logger.error(f"LLM Generation call failed: {e}")
             parsed = {
-            "answer": raw_text, # Fallback to raw text if all parsing fails
-            "sections": [],
-            "suggestions": []
-        }
+                "answer": FALLBACK_MESSAGE,
+                "sections": [],
+                "suggestions": [],
+                "is_fallback": True
+            }
+            return parsed, 0
 
-        tokens = self.count_tokens(prompt) + self.count_tokens(raw_text)
+        tokens = self.count_tokens(prompt) + self.count_tokens(str(parsed))
         return parsed, tokens
 
 
     def is_fallback(self, parsed_json: dict) -> bool:
-        if isinstance(parsed_json, dict):
-            return parsed_json.get("is_fallback", False)
-        return False
-
-    def count_tokens(self, text: str) -> int:
-        try:
-            self._ensure_ready()
-            return len(self._enc.encode(str(text)))
-        except Exception:
-            
-            return max(1, len(str(text)) // 4)
-
-    def is_fallback(self, parsed_json: dict) -> bool:
-        # Trust the LLM's structured output flag instead of regex string matching
+        
         if isinstance(parsed_json, dict):
             return parsed_json.get("is_fallback", False)
         return False
@@ -104,10 +107,7 @@ class Generator:
         if self._llm is not None:
             return
 
-        import tiktoken
-        from dotenv import load_dotenv
-        from llama_index.llms.groq import Groq
-        from llama_index.core import Settings
+        
 
         load_dotenv(os.path.join(_ROOT, ".env"))
 
