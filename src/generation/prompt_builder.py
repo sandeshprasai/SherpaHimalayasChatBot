@@ -1,98 +1,58 @@
-import os
+import json
+import tiktoken
 from datetime import datetime
 from src.config.settings import settings
-from src.api.schemas.chat import ChatResponse
-import json
-
-
-
 
 class PromptBuilder:
     def __init__(self):
         self.company = settings.company_name
         self.sys_name = settings.system_name
         self.email = settings.company_email
+        self.encoder = tiktoken.get_encoding("cl100k_base")
+        self.max_context_tokens = 9000 
 
     def build(self, req, source_nodes):
-        schema_dict = ChatResponse.model_json_schema()
         schema_text = json.dumps({
-    "answer": "A clear, conversational summary answering the user's question.",
-    "sections": [
-        {
-            "type": "cards | list | table | text",
-            "title": "Section title",
-            "items": [{"key": "value"}],
-            "content": "Optional text for 'text' type sections"
-        }
-    ],
-    "suggestions": ["Follow-up question 1?", "Follow-up question 2?"],
-    "is_fallback": False
-}, indent=2)
-        system_prompt_header = f"""
-Today's date is {datetime.now().strftime("%B %d, %Y")}.
+            "answer": "A clear summary...",
+            "sections": [{"type": "cards|list|table|text", "title": "...", "items": []}],
+            "suggestions": ["Follow-up?"]
+        }, indent=2)
 
-You are the {self.company} {self.sys_name}.
+        system_prompt = f"""Today is {datetime.now().strftime("%B %d, %Y")}.
+You are the {self.company} {self.sys_name}. Use ONLY the provided records.
+Speak naturally. Do NOT mention 'database' or 'records'.
+If info is missing, suggest: {self.email}
 
-### CRITICAL INSTRUCTIONS
-
-1. Speak naturally.
-2. Do NOT mention:
-   - source records
-   - chunks
-   - database
-   - provided context
-   - retrieved data
-3. Do NOT say:
-   - "Based on the records"
-   - "According to the data"
-4. Use ONLY the provided records below.
-5. If information is unavailable, politely suggest contacting:
-   {self.email}
-
-### REQUIRED OUTPUT FORMAT
-
-Return ONLY valid JSON.
-
-Schema:
+REQUIRED JSON FORMAT:
+{schema_text}
 """
-
-        system_prompt_footer = """
-### RULES
-
-- Do NOT return markdown
-- Do NOT use <DATA> tags
-- Do NOT include explanations outside JSON
-- Do NOT invent fields
-- Use only information available in records
-- Group related entities naturally
-- sections must always be an array
-- items must always be an array
-"""
-        system_prompt = system_prompt_header + "\n" + schema_text + "\n" + system_prompt_footer
 
         context_data = ""
-
+        current_tokens = len(self.encoder.encode(system_prompt + req.text))
+        
         for i, node in enumerate(source_nodes, 1):
-            context_data += f"""
+            node_text = f"\n---\nRECORD {i}\n{node.text}\n"
+            node_tokens = len(self.encoder.encode(node_text))
+            
+            if current_tokens + node_tokens > self.max_context_tokens:
+                break 
+            
+            context_data += node_text
+            current_tokens += node_tokens
 
----
-RECORD {i}
-
-{node.text}
-"""
-
+       
         full_prompt = f"""
 {system_prompt}
 
 ### INTERNAL DATA RECORDS
-
 {context_data}
 
 ### USER REQUEST
-
+The user is asking: 
+<user_input>
 {req.text}
+</user_input>
 
 ### JSON RESPONSE
 """
-
         return full_prompt

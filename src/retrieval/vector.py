@@ -2,7 +2,11 @@
 import os
 import sys
 import json
-
+import chromadb
+from llama_index.core import VectorStoreIndex, StorageContext, Settings
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.core.node_parser import SentenceSplitter
 
 # ── path setup ───────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -73,24 +77,22 @@ class VectorRetriever:
     def _ensure_ready(self):
         if self._index is not None:
             return
-
-        import chromadb
-        from llama_index.core import VectorStoreIndex, StorageContext, Settings
-        from llama_index.vector_stores.chroma import ChromaVectorStore
-        from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-        from llama_index.core.node_parser import SentenceSplitter
-
-        # 1. Pipeline Settings
+        
+       
         Settings.embed_model = HuggingFaceEmbedding(model_name=settings.embed_model)
-        # We use a large chunk size to avoid metadata length errors
-        Settings.node_parser = SentenceSplitter(chunk_size=4096, chunk_overlap=200)
+        
+        Settings.node_parser = SentenceSplitter(
+        chunk_size=1024, 
+        chunk_overlap=50,
+        include_metadata=False 
+    )
 
         os.makedirs(settings.vector_db_dir, exist_ok=True)
         
         db = chromadb.PersistentClient(path=settings.vector_db_dir)
         collection = db.get_or_create_collection(settings.chroma_collection)
         
-        # 2. Storage Context with BATCHING fix
+        
         vector_store = ChromaVectorStore(chroma_collection=collection)
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
