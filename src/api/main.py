@@ -1,8 +1,3 @@
-# src/api/main.py
-"""
-FastAPI application factory.
-All configuration, middleware, and routing is wired here.
-"""
 
 from contextlib import asynccontextmanager
 
@@ -20,21 +15,17 @@ from src.config.settings import settings
 from src.services.logger import logger
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Lifespan: startup / shutdown hooks
-# ─────────────────────────────────────────────────────────────────────────────
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Runs once at startup before the first request is served."""
+    
     logger.info(f"Starting {settings.company_name} Chatbot API | env={settings.ENVIRONMENT}")
-    initialize_pipeline()          # Load ChromaDB + embedding model into RAM
+    initialize_pipeline()        
     yield
     logger.info("Shutting down API server.")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# App factory
-# ─────────────────────────────────────────────────────────────────────────────
+
 app = FastAPI(
     title=f"{settings.company_name} Chatbot API",
     version="1.0.0",
@@ -44,37 +35,29 @@ app = FastAPI(
         "powered by Groq Llama 3.3 70B."
     ),
     lifespan=lifespan,
-    # Hide docs in production to avoid exposing the schema publicly
+   
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
     redoc_url=None,
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Attach rate limiter state to app
-# ─────────────────────────────────────────────────────────────────────────────
 app.state.limiter = limiter
 app.add_exception_handler(
     RateLimitExceeded,
-    _rate_limit_exceeded_handler       # Returns 429 with Retry-After header
+    _rate_limit_exceeded_handler       
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Middleware (order matters — outermost executes first)
-# ─────────────────────────────────────────────────────────────────────────────
-app.add_middleware(RequestLogMiddleware)   # 1. Log every request
-app.add_middleware(APIKeyMiddleware)       # 2. Enforce API key on /chat
+app.add_middleware(RequestLogMiddleware)   
+app.add_middleware(APIKeyMiddleware)       
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,  # e.g. ["https://sherpahimalaya.com"]
+    allow_origins=settings.cors_origins, 
     allow_credentials=True,
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["Content-Type", "X-API-Key", "Authorization"],
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Global exception handlers
-# ─────────────────────────────────────────────────────────────────────────────
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
@@ -83,9 +66,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         content={"detail": "An unexpected error occurred. Please try again."}
     )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Routes
-# ─────────────────────────────────────────────────────────────────────────────
+
 @app.get("/", tags=["Root"])
 async def root():
     return {

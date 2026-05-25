@@ -1,10 +1,4 @@
-# src/api/middleware.py
-"""
-Custom middleware:
-  1. APIKeyMiddleware   — enforces X-API-Key header on /chat routes
-  2. RequestLogMiddleware — structured request/response logging
-"""
-
+import hmac
 import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -15,24 +9,20 @@ from src.services.logger import logger
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    """
-    Checks the X-API-Key header for all routes under /chat.
-    Whitelists /health and / (root) so monitoring tools work without a key.
-    """
+    
     PROTECTED_PREFIXES = ("/chat",)
     WHITELIST = ("/", "/health", "/health/", "/docs", "/openapi.json")
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip auth for whitelisted paths
         if any(path.startswith(w) for w in self.WHITELIST) or \
            not any(path.startswith(p) for p in self.PROTECTED_PREFIXES):
             return await call_next(request)
 
-        # Validate API key
+       
         api_key = request.headers.get("X-API-Key", "")
-        if api_key != settings.API_KEY:
+        if not hmac.compare_digest(api_key, settings.API_KEY):
             logger.warning(f"Unauthorized request to {path} from {request.client.host}")
             return JSONResponse(
                 status_code=401,
@@ -44,9 +34,6 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
 
 class RequestLogMiddleware(BaseHTTPMiddleware):
-    """
-    Logs every request with timing info. Non-blocking.
-    """
     async def dispatch(self, request: Request, call_next):
         start = time.time()
         response = await call_next(request)
