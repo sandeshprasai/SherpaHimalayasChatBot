@@ -193,14 +193,18 @@ class Settings(BaseSettings):
     )
 
     # =========================================================================
-    # RATE LIMITING
+    # RATE LIMITING AND CACHING
     # =========================================================================
 
     daily_token_limit: int = Field(
         default=100000,
         env="DAILY_TOKEN_LIMIT"
     )
-
+    
+    REDIS_URL: str = Field(
+        default="redis://localhost:6379/0", 
+        env="REDIS_URL"
+    )
     # =========================================================================
     # Parsed CORS Origins
     # =========================================================================

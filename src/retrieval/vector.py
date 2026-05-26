@@ -148,55 +148,66 @@ class VectorRetriever:
                     items = data if isinstance(data, list) else [data]
 
                     for item in items:
+                        # Fully agnostic text builder
                         text = self._build_text(item)
                         if not text: continue
 
-                        print(f"📄 Indexing: {item.get('filename', 'Unknown')} ({len(text)} chars)")
-                        # Keep metadata extremely lightweight
+                        # Smart title extraction
                         meta = item.get("meta_tags", {})
+                        title = meta.get("title") or item.get("title") or item.get("name") or fname.replace(".json", "")
+
+                        print(f"📄 Indexing: {title} ({len(text)} chars)")
+                        
                         doc = Document(
                             text=text,
                             metadata={
                                 "source_id": str(fname),
-                                "title": str(meta.get("title") or item.get("title") or "Unknown")
+                                "title": str(title)
                             }
                         )
-                        
-                        doc.excluded_embed_metadata_keys = ["f", "t"]
-                        doc.excluded_llm_metadata_keys = ["f", "t"]
+                        # Ensure metadata is never embedded to avoid length errors
+                        doc.excluded_embed_metadata_keys = ["source_id", "title"]
+                        doc.excluded_llm_metadata_keys = ["source_id", "title"]
                         
                         documents.append(doc)
                 except Exception as e:
-                    print(f"   Skipping {fname}: {e}")
+                    print(f"  ⚠️ Skipping {fname}: {e}")
         return documents
 
     @staticmethod
     def _build_text(data: dict) -> str:
+        """
+        100% Agnostic: Converts any JSON dictionary into readable text.
+        It doesn't care if it's a Trek, a Laptop, or a Yoga Course.
+        """
         lines = []
-        meta = data.get("meta_tags", {})
-    
-        title = meta.get("title") or data.get("title", "")
-        lines.append(f"TITLE: {title}")
-        lines.append(f"REGION: {meta.get('primary_region', 'Nepal')}")
-    
-    # Add top-level content fields
-        for key in ("description", "overview", "content", "summary", "pricing", "price"):
-          val = data.get(key)
-          if val and isinstance(val, str):
-            lines.append(f"{key.upper()}: {val}")
-    
-    # Then meta_tags fields
-        summary = meta.get("detailed_summary") or meta.get("short_summary")
-        if summary:
-            lines.append(f"DESCRIPTION: {summary}")
+        
+        def extract_values(d: dict, prefix=""):
+            for key, val in d.items():
+                # Skip massive system fields if they exist
+                if key in ["embedding_chunks", "embedding", "_source"]:
+                    continue
+                
+                clean_key = key.replace("_", " ").upper()
+                
+                if isinstance(val, (str, int, float, bool)):
+                    lines.append(f"{prefix}{clean_key}: {val}")
+                elif isinstance(val, list):
+                    # Handle lists (like tags, highlights, or itineraries)
+                    valid_items = [str(i) for i in val if isinstance(i, (str, int, float))]
+                    if valid_items:
+                        lines.append(f"{prefix}{clean_key}: {', '.join(valid_items)}")
+                    elif val and isinstance(val[0], dict):
+                        # Handle nested lists of dictionaries (like itineraries)
+                        lines.append(f"{prefix}{clean_key}:")
+                        for item in val[:20]: # Cap at 20 items to prevent overflow
+                            extract_values(item, prefix="  - ")
+                elif isinstance(val, dict):
+                    # Handle nested dictionaries
+                    lines.append(f"{prefix}{clean_key}:")
+                    extract_values(val, prefix="  - ")
 
-        # Keep itinerary short
-        itin = meta.get("day_by_day_itinerary", [])
-        if isinstance(itin, list) and len(itin) > 0:
-            lines.append("ITINERARY OVERVIEW:")
-            for d in itin[:20]: # Limit to 20 days max to prevent massive chunks
-                lines.append(f"Day {d.get('day')}: {d.get('details')}")
-
+        extract_values(data)
         return "\n".join(lines)
 
     @staticmethod

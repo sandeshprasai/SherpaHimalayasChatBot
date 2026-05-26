@@ -12,6 +12,10 @@ class ChatRequest(BaseModel):
         examples=["How many days is the Everest Base Camp trek?",
                   "What is the cost of Annapurna Circuit?"]
     )
+    session_id: Optional[str] = Field(
+        default=None, 
+        description="A unique ID for the user's session"
+    )
 
     class Config:
         json_schema_extra = {

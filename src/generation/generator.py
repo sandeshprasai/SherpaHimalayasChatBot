@@ -19,10 +19,8 @@ for _p in (_SRC, _ROOT):
 from src.config.settings import settings
 
 FALLBACK_MESSAGE = (
-    f"Namaste! I'm sorry, but I don't have that specific information "
-    f"in our records. Please contact our team at "
-    f"**{settings.company_email}** — we'd love to help you plan "
-    f"your Himalayan adventure! 🏔️"
+    f"I'm sorry, but I don't have that specific information in our records. "
+    f"Please contact our team at **{settings.company_email}** for further assistance."
 )
 class Generator:
 

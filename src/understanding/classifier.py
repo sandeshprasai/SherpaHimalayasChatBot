@@ -15,16 +15,28 @@ class UniversalClassifier:
         self.client = AsyncGroq(api_key=api_key)
         self.available_keys = available_keys
 
-    async def classify(self, req: QueryRequest) -> QueryRequest:
-        # 1. Define allowed intents clearly for the LLM
+    # FIX: Added history parameter
+    async def classify(self, req: QueryRequest, history: list = None) -> QueryRequest:
         allowed_intents = ["lookup", "aggregate", "filter", "compare", "summarize", "general"]
         
+        # Format history for the classifier
+        history_text = ""
+        if history:
+            history_text = "RECENT CHAT HISTORY:\n"
+            for msg in history[-4:]:
+                role = "User" if msg.get("role") == "user" else "Bot"
+                history_text += f"{role}: {msg.get('content')[:100]}...\n"
+
         prompt = f"""
         FIELDS: {self.available_keys}
-        QUERY: "{req.text}"
+        {history_text}
+        LATEST QUERY: "{req.text}"
         
         TASK: Generate a Data Execution Plan and an ENHANCED search query.
         VALID INTENTS: {allowed_intents}
+        
+        CRITICAL: If the LATEST QUERY uses pronouns (it, this, that, there) or implies a subject from the RECENT CHAT HISTORY, the `search_query` MUST be rewritten to include the actual name of the subject.
+        EXAMPLE: Instead of "How long does it take?", write "[Subject Name] duration".
 
         Return ONLY valid JSON:
         {{
@@ -34,15 +46,16 @@ class UniversalClassifier:
           "sort_direction": "asc",
           "limit": 5,
           "needs_semantic_search": true,
-          "search_query": "A highly descriptive search query",
+          "search_query": "A highly descriptive search query replacing pronouns with the exact subject name",
           "reasoning": "logic"
         }}
         """
         try:
+            # Using 8B here is fast and cheap for this task
             resp = await self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant", 
                 messages=[
-                    {"role": "system", "content": "You are a precise data architect. Use only the provided intents."},
+                    {"role": "system", "content": "You are a precise data architect."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
@@ -50,7 +63,6 @@ class UniversalClassifier:
             )
             d = json.loads(resp.choices[0].message.content)
             
-            # 2. SAFETY CHECK: Fallback to 'general' if LLM hallucinates an intent
             intent_str = d.get("intent", "general").lower()
             if intent_str not in allowed_intents:
                 intent_str = "general"
@@ -62,7 +74,7 @@ class UniversalClassifier:
                 limit=d.get("limit", 5),
                 needs_semantic_search=d.get("needs_semantic_search", True),
                 search_query=d.get("search_query", req.text),
-                intent=QueryIntent(intent_str), # Now this is guaranteed to work
+                intent=QueryIntent(intent_str),
                 reasoning=d.get("reasoning", "")
             )
         except Exception as e:
@@ -70,7 +82,7 @@ class UniversalClassifier:
             req.plan = DataExecutionPlan(search_query=req.text, intent=QueryIntent.GENERAL)
         return req
 
-# Use this wrapper function at the bottom
-async def classify(req: QueryRequest, keys: list[str]) -> QueryRequest:
+# FIX: Update the wrapper function to accept history
+async def classify(req: QueryRequest, keys: list[str], history: list = None) -> QueryRequest:
     classifier = UniversalClassifier(keys)
-    return await classifier.classify(req)
+    return await classifier.classify(req, history)

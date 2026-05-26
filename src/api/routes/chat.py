@@ -32,7 +32,7 @@ async def chat(
     start = time.time()
 
     try:
-        result = await pipeline.run(body.message)
+        result = await pipeline.run(body.message, session_id=body.session_id)
     except Exception as e:
         logger.error(f"Pipeline error for query='{body.message[:80]}': {e}", exc_info=True)
         raise HTTPException(

@@ -7,6 +7,8 @@ from src.understanding.normalizer import normalize
 from src.generation.generator import Generator
 from src.config.settings import settings
 from src.generation.response_normalizer import ResponseNormalizer
+from src.services.memory import get_history, save_history
+
 
         
 
@@ -41,11 +43,12 @@ class Pipeline:
             return "\n".join(items)
         return str(data)
 
-    async def run(self, user_query: str) -> QueryResponse:
+    async def run(self, user_query: str, session_id: str = None) -> QueryResponse:
+        history = await get_history(session_id)
         norm_text = normalize(user_query, self.meta_engine._records)
         req = QueryRequest(text=user_query, normalized=norm_text)
         
-        await classify(req, self.meta_engine.schema_keys)
+        await classify(req, self.meta_engine.schema_keys, history=history)
         print(f"🔍 DEBUG: Original Query: {user_query}")
         print(f"🔍 DEBUG: Enhanced Search Query: {req.plan.search_query}")
         
@@ -104,7 +107,7 @@ class Pipeline:
                     
         
         builder = PromptBuilder()
-        prompt = builder.build(req, source_nodes)
+        prompt = builder.build(req, source_nodes ,history=history)
         structured_output, tokens = await self.generator.generate(prompt)
         normalized = self.response_normalizer.normalize(structured_output)
 
@@ -112,6 +115,11 @@ class Pipeline:
         if detected_fallback:
             from src.generation.generator import FALLBACK_MESSAGE
             normalized["answer"] = FALLBACK_MESSAGE
+        else:
+            if session_id:
+                history.append({"role": "user", "content": user_query})
+                history.append({"role": "assistant", "content": normalized["answer"]})
+                await save_history(session_id, history)
         
         return QueryResponse(
             answer=normalized["answer"],

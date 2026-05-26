@@ -1,6 +1,10 @@
 version: "3.9"
 services:
-
+  redis:
+      image: redis:7-alpine
+      restart: unless-stopped
+      ports:
+        - "6379:6379"
   indexer:
     build:
       context: .
@@ -35,6 +39,9 @@ services:
       - "${PORT:-8000}:8000"
     environment:
       - ENVIRONMENT=production
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
