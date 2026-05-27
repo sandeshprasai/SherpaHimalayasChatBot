@@ -1,6 +1,7 @@
 import os
+import json
 from typing import Any
-from src.core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy
+from src.core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy, QueryIntent
 from src.retrieval.metadata import MetadataRetriever
 from src.understanding.classifier import classify
 from src.understanding.normalizer import normalize
@@ -8,9 +9,6 @@ from src.generation.generator import Generator
 from src.config.settings import settings
 from src.generation.response_normalizer import ResponseNormalizer
 from src.services.memory import get_history, save_history
-
-
-        
 
 class Pipeline:
     def __init__(self, debug: bool = False):
@@ -21,11 +19,14 @@ class Pipeline:
         self._vec = None
 
     def _recursive_flatten(self, data: Any, depth: int = 0) -> str:
+        """Domain-Agnostic JSON Flattener: Converts any depth of data into readable text."""
         prefix = "  " * depth
         if isinstance(data, dict):
             lines = []
             for k, v in data.items():
-                if k.startswith("_") or k in ["embedding_chunks"]: continue
+                # Skip internal system fields
+                if k.startswith("_") or k in ["embedding_chunks", "embedding"]:
+                    continue
                 label = k.replace("_", " ").upper()
                 if isinstance(v, (dict, list)):
                     lines.append(f"{prefix}{label}:")
@@ -44,37 +45,40 @@ class Pipeline:
         return str(data)
 
     async def run(self, user_query: str, session_id: str = None) -> QueryResponse:
+        # 1. Initialization and Normalization
         history = await get_history(session_id)
+        # Dynamic Normalizer learns names/aliases from your specific data files
         norm_text = normalize(user_query, self.meta_engine._records)
         req = QueryRequest(text=user_query, normalized=norm_text)
         
+        # 2. Logic-Based Planning (Uses Llama 3.1 8B)
+        # This resolves pronouns like "it" and picks the correct data fields to sort/filter
         await classify(req, self.meta_engine.schema_keys, history=history)
-        print(f" DEBUG: Original Query: {user_query}")
-        print(f" DEBUG: Enhanced Search Query: {req.plan.search_query}")
         
         if self.debug: 
-            print(f"  [Original] {user_query}")
-            print(f"  [Enhanced] {req.plan.search_query}")
+            print(f" DEBUG: Original Query: {user_query}")
+            print(f" DEBUG: Enhanced Query: {req.plan.search_query}")
+            print(f" DEBUG: Logic Reasoning: {req.plan.reasoning}")
 
         source_nodes = []
         strategy = RetrievalStrategy.VECTOR
 
-        if req.plan.filters or req.plan.sort_field:
+        # 3. Execution Path A: Deterministic Metadata
+        # If user wants a comparison or a calculation (shortest/highest), we use Python logic
+        if req.plan.intent in [QueryIntent.COMPARE, QueryIntent.AGGREGATE] or req.plan.filters:
             strategy = RetrievalStrategy.METADATA
             raw_data = self.meta_engine.execute_plan(req.plan)
             source_nodes = [
                 SourceNode(
-            text=self._recursive_flatten(d),
-
-            # preserve structured data
-            metadata=d,
-
-            title=d.get("title") or d.get("name"),
-            source_id=d.get("id")
-        )
-        for d in raw_data
+                    text=self._recursive_flatten(d),
+                    metadata=d,
+                    title=str(d.get("title") or d.get("name") or d.get("id")),
+                    source_id=str(d.get("id") or d.get("source_id"))
+                ) for d in raw_data
             ]
 
+        # 4. Execution Path B: Semantic Vector Search
+        # If metadata is empty or the user is asking "How/Why" questions
         if not source_nodes or req.plan.needs_semantic_search:
             if source_nodes: strategy = RetrievalStrategy.HYBRID
             try:
@@ -82,52 +86,55 @@ class Pipeline:
                     from src.retrieval.vector import VectorRetriever
                     self._vec = VectorRetriever()
                 
-                vec_results = await  self._vec.search(req.plan.search_query)
-                print(f"📊 DEBUG: Vector Search found {len(vec_results)} raw nodes.")
+                # Search using the ENHANCED standalone query from the classifier
+                vec_results = await self._vec.search(req.plan.search_query)
                 
-                existing_titles = [n.title for n in source_nodes if n.title]
+                # Deduplicate results: don't add the same item twice
+                existing_titles = [str(n.title).lower() for n in source_nodes if n.title]
                 for vn in vec_results:
-                    if vn.title not in existing_titles:
+                    if str(vn.title).lower() not in existing_titles:
                         source_nodes.append(vn)
             except Exception as e:
-                if self.debug: print(f"  [Error] Vector: {e}")
+                if self.debug: print(f"  [Pipeline Error] Vector search: {e}")
 
+        # 5. Check for zero results
         if not source_nodes:
-            return QueryResponse(answer=f"No results found for enhanced query. Contact {settings.company_email}.", is_fallback=True)
+            return QueryResponse(
+                answer=f"I'm sorry, I couldn't find any information matching that request in our system. Please contact {settings.company_email}.", 
+                is_fallback=True, 
+                used_llm=False
+            )
 
+        # 6. LLM Synthesis (Uses Llama 3.3 70B)
         from src.generation.prompt_builder import PromptBuilder
-
-        for node in source_nodes:
-            if not node.title or node.title == "Unknown":
-       
-                for line in node.text.splitlines():
-                     if "TITLE:" in line:
-                        node.title = line.replace("TITLE:", "").strip()
-                        break
-                    
-        
         builder = PromptBuilder()
-        prompt = builder.build(req, source_nodes ,history=history)
-        structured_output, tokens = await self.generator.generate(prompt)
-        normalized = self.response_normalizer.normalize(structured_output)
+        prompt = builder.build(req, source_nodes, history=history)
+        
+        raw_output, tokens = await self.generator.generate(prompt)
+        
+        # 7. Structural Normalization
+        # Converts LLM response into sections, suggestions, and answer text
+        normalized = self.response_normalizer.normalize(raw_output)
 
-        detected_fallback = normalized.get("is_fallback", False)
-        if detected_fallback:
-            from src.generation.generator import FALLBACK_MESSAGE
-            normalized["answer"] = FALLBACK_MESSAGE
+        if normalized.get("is_fallback", False):
+            final_answer = f"I'm sorry, I don't have enough data to answer that. Please contact {settings.company_email}."
+            is_fb = True
         else:
+            final_answer = normalized["answer"]
+            is_fb = False
+            # Save history ONLY if not a fallback
             if session_id:
                 history.append({"role": "user", "content": user_query})
-                history.append({"role": "assistant", "content": normalized["answer"]})
+                history.append({"role": "assistant", "content": final_answer})
                 await save_history(session_id, history)
         
         return QueryResponse(
-            answer=normalized["answer"],
-            sections=normalized["sections"],
-            suggestions=normalized["suggestions"],
+            answer=final_answer,
+            sections=normalized.get("sections", []),
+            suggestions=normalized.get("suggestions", []),
             sources=source_nodes,
             strategy=strategy,
             used_llm=True,
-            is_fallback=detected_fallback,
+            is_fallback=is_fb,
             tokens_used=tokens
         )

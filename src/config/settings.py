@@ -1,6 +1,5 @@
 import importlib
 import os
-
 from typing import List
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,10 +33,7 @@ except Exception:
 # =============================================================================
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-
-PROJECT_ROOT = os.path.abspath(
-    os.path.join(HERE, "../..")
-)
+PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "../.."))
 
 
 # =============================================================================
@@ -53,51 +49,39 @@ class Settings(BaseSettings):
     )
 
     # =========================================================================
-    # APP
+    # APP & SERVER
     # =========================================================================
 
-    ENVIRONMENT: str = Field(..., env="ENVIRONMENT")
-    DEBUG: bool = Field(..., env="DEBUG")
-
-    # =========================================================================
-    # SERVER
-    # =========================================================================
-
-    HOST: str = Field(..., env="HOST")
-    PORT: int = Field(..., env="PORT")
-
-    # =========================================================================
-    # SECURITY
-    # =========================================================================
-
+    ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
+    DEBUG: bool = Field(default=True, env="DEBUG")
+    HOST: str = Field(default="0.0.0.0", env="HOST")
+    PORT: int = Field(default=8000, env="PORT")
     API_KEY: str = Field(..., env="API_KEY")
 
     # =========================================================================
-    # GROQ
+    # GROQ & MODELS (Two-Tier Architecture)
     # =========================================================================
 
     GROQ_API_KEY: str = Field(..., env="GROQ_API_KEY")
 
-    # =========================================================================
-    # LOGGING
-    # =========================================================================
+    # High-reasoning model for final synthesis
+    llm_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        env="LLM_MODEL"
+    )
 
-    LOG_LEVEL: str = Field(..., env="LOG_LEVEL")
+    # Fast, low-cost model for logic/planning/rewriting
+    logic_model: str = Field(
+        default="llama-3.1-8b-instant",
+        env="LOGIC_MODEL"
+    )
 
-    # =========================================================================
-    # CORS
-    # =========================================================================
-
-    ALLOWED_ORIGINS: str = Field(..., env="ALLOWED_ORIGINS")
-
-    # =========================================================================
-    # PROJECT ROOT
-    # =========================================================================
-
-    project_root: str = PROJECT_ROOT
+    llm_temperature: float = Field(default=0.0, env="LLM_TEMPERATURE")
+    llm_max_tokens: int = Field(default=1024, env="LLM_MAX_TOKENS")
+    embed_model: str = Field(default="BAAI/bge-small-en-v1.5", env="EMBED_MODEL")
 
     # =========================================================================
-    # DATA DIRECTORIES
+    # DATA & INDEXES
     # =========================================================================
 
     data_dir: str = Field(
@@ -106,116 +90,51 @@ class Settings(BaseSettings):
     )
 
     rag_ready_dir: str = Field(
-        default=os.path.join(
-            PROJECT_ROOT,
-            "data/datasets/rag_ready"
-        ),
+        default=os.path.join(PROJECT_ROOT, "data/datasets/rag_ready"),
         env="RAG_READY_DIR"
     )
 
-    # =========================================================================
-    # INDEXES
-    # =========================================================================
-
-    vector_db_dir: str = Field(
-        ...,
-        env="CHROMA_DB_PATH"
-    )
-
-    metadata_index: str = Field(
-        ...,
-        env="METADATA_INDEX_PATH"
-    )
-
+    vector_db_dir: str = Field(..., env="CHROMA_DB_PATH")
+    metadata_index: str = Field(..., env="METADATA_INDEX_PATH")
     cleaned_metadata_index: str = Field(
-        default=os.path.join(
-            PROJECT_ROOT,
-            "data/indexes/metadata/metadata_index.cleaned.json"
-        ),
+        default=os.path.join(PROJECT_ROOT, "data/indexes/metadata/metadata_index.cleaned.json"),
         env="CLEANED_METADATA_INDEX_PATH"
-    )
-
-    # =========================================================================
-    # MODEL CONFIG
-    # =========================================================================
-
-    llm_model: str = Field(
-        default="llama-3.3-70b-versatile",
-        env="LLM_MODEL"
-    )
-
-    llm_temperature: float = Field(
-        default=0.1,
-        env="LLM_TEMPERATURE"
-    )
-
-    llm_max_tokens: int = Field(
-        default=1024,
-        env="LLM_MAX_TOKENS"
-    )
-
-    embed_model: str = Field(
-        default="BAAI/bge-small-en-v1.5",
-        env="EMBED_MODEL"
     )
 
     # =========================================================================
     # RETRIEVAL CONFIG
     # =========================================================================
 
-    similarity_top_k: int = Field(
-        default=5,
-        env="SIMILARITY_TOP_K"
-    )
-
-    chroma_collection: str = Field(
-        ...,
-        env="CHROMA_COLLECTION"
-    )
+    similarity_top_k: int = Field(default=5, env="SIMILARITY_TOP_K")
+    chroma_collection: str = Field(..., env="CHROMA_COLLECTION")
 
     # =========================================================================
-    # BRANDING
+    # BRANDING (Agnostic Identity)
     # =========================================================================
 
-    company_email: str = Field(
-        ...,
-        env="COMPANY_EMAIL"
-    )
-
-    company_name: str = Field(
-        ...,
-        env="COMPANY_NAME"
-    )
-
-    system_name: str = Field(
-        ...,
-        env="SYSTEM_NAME"
-    )
-
-    # =========================================================================
-    # RATE LIMITING AND CACHING
-    # =========================================================================
-
-    daily_token_limit: int = Field(
-        default=100000,
-        env="DAILY_TOKEN_LIMIT"
-    )
+    company_email: str = Field(..., env="COMPANY_EMAIL")
+    company_name: str = Field(..., env="COMPANY_NAME")
+    system_name: str = Field(..., env="SYSTEM_NAME")
     
-    REDIS_URL: str = Field(
-        default="redis://localhost:6379/0", 
-        env="REDIS_URL"
-    )
+    # Missing attribute that caused the crash
+    greeting: str = Field(default="Namaste", env="GREETING")
+
     # =========================================================================
-    # Parsed CORS Origins
+    # INFRASTRUCTURE & SECURITY
+    # =========================================================================
+
+    REDIS_URL: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
+    LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
+    ALLOWED_ORIGINS: str = Field(default="*", env="ALLOWED_ORIGINS")
+    daily_token_limit: int = Field(default=100000, env="DAILY_TOKEN_LIMIT")
+
+    # =========================================================================
+    # Computed Properties
     # =========================================================================
 
     @property
     def cors_origins(self) -> List[str]:
-        return [
-            origin.strip()
-            for origin in self.ALLOWED_ORIGINS.split(",")
-            if origin.strip()
-        ]
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
 
 # =============================================================================

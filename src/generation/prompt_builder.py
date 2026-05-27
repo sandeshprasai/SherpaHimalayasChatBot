@@ -1,69 +1,71 @@
 import json
-import tiktoken
 from datetime import datetime
 from src.config.settings import settings
+from src.core.schema import QueryIntent
+
 class PromptBuilder:
     def __init__(self):
         self.company = settings.company_name
         self.sys_name = settings.system_name
         self.email = settings.company_email
-        self.encoder = tiktoken.get_encoding("cl100k_base")
-        self.max_context_tokens = 9000 
+        self.greeting = settings.greeting
 
     def build(self, req, source_nodes, history=None):
-        if history is None:
-            history = []
-
-       
-        schema_text = json.dumps({
-            "answer": "A clear summary...",
-            "sections": [{"type": "cards|list|table|text", "title": "...", "items": []}],
-            "suggestions": ["Follow-up?"]
-        }, indent=2)
-
-        system_prompt = f"""Today is {datetime.now().strftime("%B %d, %Y")}.
-You are the {self.company} {self.sys_name}. Use ONLY the provided records.
-Speak naturally. Do NOT mention 'database' or 'records'.
-If info is missing, suggest: {self.email}
-
-REQUIRED JSON FORMAT:
-{schema_text}
-"""
-        history_text = ""
-        if history:
-            history_text = "\n### CONVERSATION HISTORY\n"
-            for msg in history:
-                # Expecting dicts like {"role": "user", "content": "..."}
-                role = "User" if msg.get("role") == "user" else "Assistant"
-                history_text += f"{role}: {msg.get('content')}\n"
-
-        context_data = ""
-        base_text = system_prompt + history_text + req.text
-        current_tokens = len(self.encoder.encode(base_text))
+        """
+        Constructs a prompt that treats 'Memory' and 'Data' as abstract objects.
+        """
         
+        # 1. Structure the Memory turn-by-turn
+        memory_block = "No previous context."
+        if history:
+            memory_block = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history[-6:]])
+
+        # 2. Logic-Aware Directives
+        # If the user is comparing, we force a specific response style
+        logic_directive = ""
+        if req.plan.intent == QueryIntent.COMPARE:
+            logic_directive = "- DATA COMPARISON: You must compare the attributes of ALL records below. Markdown tables are preferred."
+        elif req.plan.intent == QueryIntent.AGGREGATE:
+            logic_directive = "- DATA RANKING: Identify which record best satisfies the user's specific sort criteria."
+
+        # 3. System Instructions (Branding is injected from settings)
+        system_instructions = f"""
+        Today's date is {datetime.now().strftime("%B %d, %Y")}.
+        You are the {self.company} {self.sys_name}.
+
+        ### OPERATIONAL RULES:
+        - NATURAL VOICE: State facts directly. Never mention "context chunks," "provided data," or "database."
+        - FACTUAL BOUNDARY: Use ONLY the DATA RECORDS provided below. 
+        - GREETING: Use '{self.greeting}' if appropriate for the conversation flow.
+        - UNCERTAINTY: If the data records do not contain the answer, say you don't have that specific information and suggest contacting {self.email}.
+        {logic_directive}
+
+        ### RESPONSE FORMAT (STRICT JSON):
+        {{
+          "answer": "Primary natural language response...",
+          "sections": [{{ "type": "text|list|table", "title": "...", "items": [] }}],
+          "suggestions": ["Follow-up question 1", "Follow-up question 2"],
+          "is_fallback": boolean
+        }}
+        """
+
+        # 4. Data Record Assembly
+        data_records = ""
         for i, node in enumerate(source_nodes, 1):
-            node_text = f"\n---\nRECORD {i}\n{node.text}\n"
-            node_tokens = len(self.encoder.encode(node_text))
-            
-            if current_tokens + node_tokens > self.max_context_tokens:
-                break 
-            
-            context_data += node_text
-            current_tokens += node_tokens
+            data_records += f"\n---\nRECORD {i} (Title: {node.title})\n{node.text}\n"
 
-        full_prompt = f"""
-{system_prompt}
+        # 5. Final Assembly
+        return f"""
+        {system_instructions}
 
-### INTERNAL DATA RECORDS
-{context_data}
-{history_text}
+        ### CONVERSATION MEMORY:
+        {memory_block}
 
-### USER REQUEST
-The user is asking: 
-<user_input>
-{req.text}
-</user_input>
+        ### DATA RECORDS:
+        {data_records}
 
-### JSON RESPONSE
-"""
-        return full_prompt
+        ### USER INQUIRY:
+        {req.text}
+
+        ### JSON RESPONSE:
+        """
