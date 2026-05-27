@@ -26,7 +26,7 @@ async def save_history(session_id: str, history: list):
         trimmed_history = history[-6:]
         await redis_client.setex(
             f"session:{session_id}",
-            86400, 
+            600, 
             json.dumps(trimmed_history)
         )
     except Exception as e:

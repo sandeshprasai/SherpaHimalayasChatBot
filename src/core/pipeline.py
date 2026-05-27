@@ -49,8 +49,8 @@ class Pipeline:
         req = QueryRequest(text=user_query, normalized=norm_text)
         
         await classify(req, self.meta_engine.schema_keys, history=history)
-        print(f"🔍 DEBUG: Original Query: {user_query}")
-        print(f"🔍 DEBUG: Enhanced Search Query: {req.plan.search_query}")
+        print(f" DEBUG: Original Query: {user_query}")
+        print(f" DEBUG: Enhanced Search Query: {req.plan.search_query}")
         
         if self.debug: 
             print(f"  [Original] {user_query}")
