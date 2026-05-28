@@ -2,6 +2,8 @@ import json
 import os
 from groq import AsyncGroq
 from dotenv import load_dotenv
+from src.services.logger import logger
+import tiktoken
 from src.core.schema import QueryRequest, DataExecutionPlan, QueryIntent
 from src.config.settings import settings
 
@@ -27,6 +29,10 @@ class UniversalClassifier:
         self.available_keys = available_keys
 
     async def classify(self, req: QueryRequest, history: list = None) -> QueryRequest:
+        """
+        Logic-only classification. 
+        Matches user intent to discovered schema fields without domain knowledge.
+        """
         allowed_intents = [i.value for i in QueryIntent]
         
         history_text = "No previous history."
@@ -63,31 +69,48 @@ class UniversalClassifier:
           "reasoning": "How context was resolved"
         }}
         """
-        try:
-            resp = await self.client.chat.completions.create(
-                model=settings.logic_model, # Switched to use settings
-                messages=[
-                    {"role": "system", "content": "You are a precise data architect."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.0
-            )
-            d = json.loads(resp.choices[0].message.content)
+        
+        # --- RETRY LOGIC WITH EXPONENTIAL BACKOFF ---
+        max_retries = 3
+        backoff_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                resp = await self.client.chat.completions.create(
+                    model=settings.logic_model,
+                    messages=[
+                        {"role": "system", "content": "You are a precise data architect."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.0
+                )
+                d = json.loads(resp.choices[0].message.content)
 
-            req.plan = DataExecutionPlan(
-                filters=d.get("filters", {}),
-                sort_field=d.get("sort_field"),
-                sort_direction=d.get("sort_direction", "asc"),
-                limit=d.get("limit", 5),
-                needs_semantic_search=d.get("needs_semantic_search", True),
-                search_query=d.get("search_query", req.text),
-                intent=QueryIntent(d.get("intent", "general")),
-                reasoning=d.get("reasoning", "")
-            )
-        except Exception as e:
-            print(f"⚠️ Classifier Error: {e}")
-            req.plan = DataExecutionPlan(search_query=req.text, intent=QueryIntent.GENERAL)
+                req.plan = DataExecutionPlan(
+                    filters=d.get("filters", {}),
+                    sort_field=d.get("sort_field"),
+                    sort_direction=d.get("sort_direction", "asc"),
+                    limit=d.get("limit", 5),
+                    needs_semantic_search=d.get("needs_semantic_search", True),
+                    search_query=d.get("search_query", req.text),
+                    intent=QueryIntent(d.get("intent", "general")),
+                    reasoning=d.get("reasoning", "")
+                )
+                break  # Success! Exit the retry loop
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Groq Classification call failed (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Retrying in {backoff_delay}s..."
+                    )
+                    import asyncio
+                    await asyncio.sleep(backoff_delay)
+                    backoff_delay *= 2.0
+                else:
+                    logger.error(f"Groq Classification call failed completely after {max_retries} attempts: {e}")
+                    req.plan = DataExecutionPlan(search_query=req.text, intent=QueryIntent.GENERAL)
         
         return req
 
