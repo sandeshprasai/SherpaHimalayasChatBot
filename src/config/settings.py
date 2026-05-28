@@ -125,8 +125,11 @@ class Settings(BaseSettings):
 
     REDIS_URL: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
-    ALLOWED_ORIGINS: str = Field(default="*", env="ALLOWED_ORIGINS")
-    daily_token_limit: int = Field(default=100000, env="DAILY_TOKEN_LIMIT")
+    ALLOWED_ORIGINS: str = Field(
+        default="http://localhost:8000,http://localhost:5173,http://127.0.0.1:3000", 
+        env="ALLOWED_ORIGINS"
+    )
+    daily_token_limit: int = Field(default=100000, env="DAILY_TOKEN_LIMIT") 
 
     # =========================================================================
     # Computed Properties
