@@ -3,28 +3,32 @@ import os
 from groq import AsyncGroq
 from dotenv import load_dotenv
 from src.core.schema import QueryRequest, DataExecutionPlan, QueryIntent
+from src.config.settings import settings
 
-# Find .env in project root
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
 load_dotenv(os.path.join(_ROOT, ".env"))
 
-class UniversalClassifier:
-    def __init__(self, available_keys: list[str]):
+
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    if _groq_client is None:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY missing in .env")
-        self.client = AsyncGroq(api_key=api_key)
+        _groq_client = AsyncGroq(api_key=api_key)
+    return _groq_client
+
+class UniversalClassifier:
+    def __init__(self, available_keys: list[str]):
+        self.client = get_groq_client()
         self.available_keys = available_keys
 
     async def classify(self, req: QueryRequest, history: list = None) -> QueryRequest:
-        """
-        Logic-only classification. 
-        Matches user intent to discovered schema fields without domain knowledge.
-        """
         allowed_intents = [i.value for i in QueryIntent]
         
-        # Format history for the logic model
         history_text = "No previous history."
         if history:
             history_text = "RECENT CHAT HISTORY:\n"
@@ -61,7 +65,7 @@ class UniversalClassifier:
         """
         try:
             resp = await self.client.chat.completions.create(
-                model="llama-3.1-8b-instant", # Faster/cheaper logic tier
+                model=settings.logic_model, # Switched to use settings
                 messages=[
                     {"role": "system", "content": "You are a precise data architect."},
                     {"role": "user", "content": prompt}
@@ -71,7 +75,6 @@ class UniversalClassifier:
             )
             d = json.loads(resp.choices[0].message.content)
 
-         
             req.plan = DataExecutionPlan(
                 filters=d.get("filters", {}),
                 sort_field=d.get("sort_field"),
@@ -89,6 +92,5 @@ class UniversalClassifier:
         return req
 
 async def classify(req: QueryRequest, keys: list[str], history: list = None) -> QueryRequest:
- 
     classifier = UniversalClassifier(keys)
     return await classifier.classify(req, history)
