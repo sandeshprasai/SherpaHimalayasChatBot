@@ -129,7 +129,6 @@ class Settings(BaseSettings):
         default="http://localhost:8000,http://localhost:5173,http://127.0.0.1:3000", 
         env="ALLOWED_ORIGINS"
     )
-    daily_token_limit: int = Field(default=100000, env="DAILY_TOKEN_LIMIT") 
 
     # =========================================================================
     # Computed Properties

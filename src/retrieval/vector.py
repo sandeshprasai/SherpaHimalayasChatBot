@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio  # Added
 import chromadb
 from llama_index.core import VectorStoreIndex, StorageContext, Settings, Document
 from llama_index.vector_stores.chroma import ChromaVectorStore
@@ -11,9 +12,13 @@ from src.core.schema import SourceNode
 class VectorRetriever:
     def __init__(self):
         self._index = None
+        # --- ADDED LOCK FOR THREAD-SAFETY ---
+        self._lock = asyncio.Lock()
 
     async def search(self, query: str, top_k: int = None, prefer_types: list = None) -> list[SourceNode]:
-        self._ensure_ready()
+        # Await the initialization safely
+        await self._ensure_ready()
+        
         k = top_k or settings.similarity_top_k
         fetch_k = k * 3 if prefer_types else k
         
@@ -65,23 +70,39 @@ class VectorRetriever:
                 except Exception: continue
         return documents
 
-    def _ensure_ready(self):
-        if self._index: return
-        Settings.embed_model = HuggingFaceEmbedding(model_name=settings.embed_model)
-        Settings.node_parser = SentenceSplitter(chunk_size=1024, chunk_overlap=50)
-        
-        os.makedirs(settings.vector_db_dir, exist_ok=True)
-        db = chromadb.PersistentClient(path=settings.vector_db_dir)
-        collection = db.get_or_create_collection(settings.chroma_collection)
-        
-        vector_store = ChromaVectorStore(chroma_collection=collection)
-        storage_context = StorageContext.from_defaults(vector_store=vector_store)
-        
-        if collection.count() == 0:
-            docs = self._load_documents()
-            self._index = VectorStoreIndex.from_documents(docs, storage_context=storage_context, show_progress=True)
-        else:
-            self._index = VectorStoreIndex.from_vector_store(vector_store, storage_context=storage_context)
+    # --- UPDATED TO BE ASYNC AND THREAD-SAFE ---
+    async def _ensure_ready(self):
+        if self._index: 
+            return
+            
+        async with self._lock:
+            # Double-check pattern: another request might have finished initializing 
+            # while this request was waiting for the lock.
+            if self._index: 
+                return
+                
+            Settings.embed_model = HuggingFaceEmbedding(model_name=settings.embed_model)
+            # --- FIX: Changed chunk_overlap from 50 to 200 to prevent semantic context splitting ---
+            Settings.node_parser = SentenceSplitter(chunk_size=1024, chunk_overlap=200)
+            
+            os.makedirs(settings.vector_db_dir, exist_ok=True)
+            db = chromadb.PersistentClient(path=settings.vector_db_dir)
+            collection = db.get_or_create_collection(settings.chroma_collection)
+            
+            vector_store = ChromaVectorStore(chroma_collection=collection)
+            storage_context = StorageContext.from_defaults(vector_store=vector_store)
+            
+            if collection.count() == 0:
+                # Wrap document loading & indexing in a separate thread so it doesn't freeze the event loop
+                docs = await asyncio.to_thread(self._load_documents)
+                self._index = await asyncio.to_thread(
+                    VectorStoreIndex.from_documents, 
+                    docs, 
+                    storage_context=storage_context, 
+                    show_progress=True
+                )
+            else:
+                self._index = VectorStoreIndex.from_vector_store(vector_store, storage_context=storage_context)
 
     @staticmethod
     def _build_text(data: dict) -> str:

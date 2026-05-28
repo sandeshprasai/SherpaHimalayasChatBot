@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import re
 from typing import Dict, Any
@@ -12,10 +11,6 @@ from llama_index.core import Settings
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC  = os.path.abspath(os.path.join(_HERE, ".."))
 _ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
-for _p in (_SRC, _ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
 from src.config.settings import settings
 
 FALLBACK_MESSAGE = (

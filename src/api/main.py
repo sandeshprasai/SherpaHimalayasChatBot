@@ -20,7 +20,7 @@ from src.services.logger import logger
 async def lifespan(app: FastAPI):
     
     logger.info(f"Starting {settings.company_name} Chatbot API | env={settings.ENVIRONMENT}")
-    initialize_pipeline()        
+    await initialize_pipeline()        
     yield
     logger.info("Shutting down API server.")
 
