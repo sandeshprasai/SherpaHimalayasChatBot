@@ -1,6 +1,6 @@
 import time
-from fastapi import APIRouter, Depends, HTTPException, status ,Request
-from fastapi.concurrency import run_in_threadpool
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Cookie
 from src.api.schemas.chat import ChatRequest, ChatResponse, SourceDocument
 from src.api.dependencies import get_pipeline, limiter
 from src.core.pipeline import Pipeline
@@ -11,28 +11,39 @@ router = APIRouter(
     tags=["Chat"]
 )
 
-
 @router.post(
     "/",
     response_model=ChatResponse,
-    summary="Send a message to the Sherpa Chatbot",
-    description=(
-        "Accepts a natural language query about trekking, peaks, expeditions, "
-        "pricing, or general travel to Nepal/Tibet/Bhutan. "
-        "Returns an AI-generated answer with optional source references."
-    )
+    summary="Send a message to the Sherpa Chatbot"
 )
 @limiter.limit("20/minute")   
 async def chat(      
     request: Request,
     body: ChatRequest,
+    # FastAPI automatically looks for a cookie named "session_id"
+    session_id: str = Cookie(default=None),
     pipeline: Pipeline = Depends(get_pipeline)
 ):
-    
     start = time.time()
 
+    # --- STRICT COOKIE VALIDATION ---
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session cookie is missing. Please ensure your browser sends the session_id cookie."
+        )
+
     try:
-        result = await pipeline.run(body.message, session_id=body.session_id)
+        val_uuid = uuid.UUID(session_id, version=4)
+        safe_session_id = str(val_uuid)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid session_id cookie format. Must be a valid UUIDv4 string."
+        )
+
+    try:
+        result = await pipeline.run(body.message, session_id=safe_session_id)
     except Exception as e:
         logger.error(f"Pipeline error for query='{body.message[:80]}': {e}", exc_info=True)
         raise HTTPException(
@@ -47,7 +58,6 @@ async def chat(
             f"FALLBACK | query='{body.message}' | latency={latency_ms}ms"
         )
 
-    # ── Build response ─────────────────────────────────────────────────────
     sources = []
     if result.sources:
         for s in result.sources:
@@ -64,6 +74,7 @@ async def chat(
 
     return ChatResponse(
         success=True,
+        session_id=safe_session_id,
         answer=result.answer,
         sections=result.sections,
         suggestions=result.suggestions,

@@ -1,7 +1,5 @@
-
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
-from typing import Any, Dict
 
 class ChatRequest(BaseModel):
     message: str = Field(
@@ -11,10 +9,6 @@ class ChatRequest(BaseModel):
         description="The user's natural language question",
         examples=["How many days is the Everest Base Camp trek?",
                   "What is the cost of Annapurna Circuit?"]
-    )
-    session_id: Optional[str] = Field(
-        default=None, 
-        description="A unique ID for the user's session"
     )
 
     class Config:
@@ -41,6 +35,11 @@ class UISection(BaseModel):
 class ChatResponse(BaseModel):
     success: bool = Field(...)
 
+    session_id: str = Field(
+        ..., 
+        description="Unique UUID for the conversation session"
+    )
+
     answer: str = Field(
         ...,
         description="Human-readable AI summary"
@@ -63,11 +62,12 @@ class ChatResponse(BaseModel):
     latency_ms: int = Field(...)
 
     is_fallback: bool = Field(default=False)
+
     class Config:
         json_schema_extra = {
             "example": {
                 "success": True,
-                "response": "The Everest Base Camp trek typically takes 14 days...",
+                "answer": "The Everest Base Camp trek typically takes 14 days...",
                 "sources": [{"title": "Everest Base Camp Trek", "source": "ebc-trek"}],
                 "latency_ms": 1240,
                 "is_fallback": False
