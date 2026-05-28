@@ -1,10 +1,18 @@
 version: "3.9"
+
 services:
   redis:
-      image: redis:7-alpine
-      restart: unless-stopped
-      ports:
-        - "6379:6379"
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    # --- ADDED HEALTHCHECK FOR REDIS ---
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   indexer:
     build:
       context: .
@@ -26,7 +34,6 @@ services:
       "
     restart: "no"
 
-
   chatbot:
     build:
       context: .
@@ -40,8 +47,10 @@ services:
     environment:
       - ENVIRONMENT=production
       - REDIS_URL=redis://redis:6379/0
+    # --- UPDATED TO WAIT FOR HEALTHY REDIS ---
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
