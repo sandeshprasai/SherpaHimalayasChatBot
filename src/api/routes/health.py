@@ -1,5 +1,6 @@
-from fastapi import APIRouter
-from src.api.dependencies import get_pipeline # <--- Change this
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
+from src.api.dependencies import get_pipeline
 from src.config.settings import settings
 
 router = APIRouter(prefix="/health", tags=["Health"])
@@ -7,15 +8,19 @@ router = APIRouter(prefix="/health", tags=["Health"])
 @router.get("/", summary="Service health check")
 async def health_check():
     try:
-        # Try to get the pipeline; if it exists, we are healthy
-        p = get_pipeline()
+       
+        get_pipeline()
         pipeline_ready = True
-    except:
+    except Exception:
         pipeline_ready = False
         
-    return {
+    content = {
         "status": "healthy" if pipeline_ready else "degraded",
         "pipeline_ready": pipeline_ready,
         "environment": settings.ENVIRONMENT,
         "service": f"{settings.company_name} Chatbot API"
     }
+    
+    status_code = status.HTTP_200_OK if pipeline_ready else status.HTTP_503_SERVICE_UNAVAILABLE
+    
+    return JSONResponse(status_code=status_code, content=content)
