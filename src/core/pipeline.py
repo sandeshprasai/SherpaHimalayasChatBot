@@ -2,9 +2,10 @@ import os
 import json
 from typing import Any
 from src.core.schema import QueryRequest, QueryResponse, SourceNode, RetrievalStrategy, QueryIntent
+
 from src.retrieval.metadata import MetadataRetriever
-from src.understanding.classifier import classify
-from src.understanding.normalizer import normalize
+from src.understanding.classifier import UniversalClassifier  
+from src.understanding.normalizer import DynamicNormalizer    
 from src.generation.generator import Generator
 from src.config.settings import settings
 from src.generation.response_normalizer import ResponseNormalizer
@@ -17,14 +18,16 @@ class Pipeline:
         self.generator = Generator()
         self.response_normalizer = ResponseNormalizer()
         self._vec = None
+        
+        self.normalizer = DynamicNormalizer(self.meta_engine._records)
+        self.classifier = UniversalClassifier(self.meta_engine.schema_keys)
 
     def _recursive_flatten(self, data: Any, depth: int = 0) -> str:
-        """Domain-Agnostic JSON Flattener: Converts any depth of data into readable text."""
+
         prefix = "  " * depth
         if isinstance(data, dict):
             lines = []
             for k, v in data.items():
-                # Skip internal system fields
                 if k.startswith("_") or k in ["embedding_chunks", "embedding"]:
                     continue
                 label = k.replace("_", " ").upper()
@@ -45,15 +48,15 @@ class Pipeline:
         return str(data)
 
     async def run(self, user_query: str, session_id: str = None) -> QueryResponse:
-        # 1. Initialization and Normalization
+        
         history = await get_history(session_id)
-        # Dynamic Normalizer learns names/aliases from your specific data files
-        norm_text = normalize(user_query, self.meta_engine._records)
+        
+        
+        norm_text = self.normalizer.normalize(user_query)
         req = QueryRequest(text=user_query, normalized=norm_text)
         
-        # 2. Logic-Based Planning (Uses Llama 3.1 8B)
-        # This resolves pronouns like "it" and picks the correct data fields to sort/filter
-        await classify(req, self.meta_engine.schema_keys, history=history)
+        
+        await self.classifier.classify(req, history=history)
         
         if self.debug: 
             print(f" DEBUG: Original Query: {user_query}")
@@ -63,8 +66,7 @@ class Pipeline:
         source_nodes = []
         strategy = RetrievalStrategy.VECTOR
 
-        # 3. Execution Path A: Deterministic Metadata
-        # If user wants a comparison or a calculation (shortest/highest), we use Python logic
+        
         if req.plan.intent in [QueryIntent.COMPARE, QueryIntent.AGGREGATE] or req.plan.filters:
             strategy = RetrievalStrategy.METADATA
             raw_data = self.meta_engine.execute_plan(req.plan)
@@ -77,8 +79,7 @@ class Pipeline:
                 ) for d in raw_data
             ]
 
-        # 4. Execution Path B: Semantic Vector Search
-        # If metadata is empty or the user is asking "How/Why" questions
+       
         if not source_nodes or req.plan.needs_semantic_search:
             if source_nodes: strategy = RetrievalStrategy.HYBRID
             try:
@@ -86,10 +87,8 @@ class Pipeline:
                     from src.retrieval.vector import VectorRetriever
                     self._vec = VectorRetriever()
                 
-                # Search using the ENHANCED standalone query from the classifier
                 vec_results = await self._vec.search(req.plan.search_query)
                 
-                # Deduplicate results: don't add the same item twice
                 existing_titles = [str(n.title).lower() for n in source_nodes if n.title]
                 for vn in vec_results:
                     if str(vn.title).lower() not in existing_titles:
@@ -97,7 +96,7 @@ class Pipeline:
             except Exception as e:
                 if self.debug: print(f"  [Pipeline Error] Vector search: {e}")
 
-        # 5. Check for zero results
+        
         if not source_nodes:
             return QueryResponse(
                 answer=f"I'm sorry, I couldn't find any information matching that request in our system. Please contact {settings.company_email}.", 
@@ -112,7 +111,7 @@ class Pipeline:
         
         raw_output, tokens = await self.generator.generate(prompt)
         
-        
+       
         normalized = self.response_normalizer.normalize(raw_output)
 
         if normalized.get("is_fallback", False):
@@ -121,12 +120,13 @@ class Pipeline:
         else:
             final_answer = normalized["answer"]
             is_fb = False
-            # Save history ONLY if not a fallback
+            
             if session_id:
                 is_duplicate = False
                 if len(history) >= 2 and history[-2].get("role") == "user":
                     if history[-2].get("content") == user_query:
                         is_duplicate = True
+                
                 if not is_duplicate:
                     history.append({"role": "user", "content": user_query})
                     history.append({"role": "assistant", "content": final_answer})
@@ -140,5 +140,6 @@ class Pipeline:
             strategy=strategy,
             used_llm=True,
             is_fallback=is_fb,
-            tokens_used=tokens
+            tokens_used=tokens,
+            intent=req.plan.intent
         )

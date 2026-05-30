@@ -66,11 +66,23 @@ async def chat(
                 source=s.source_id or ""
             ))
 
-    logger.info(
-        f"Chat OK | latency={latency_ms}ms | fallback={result.is_fallback} "
-        f"| intent={result.intent} | strategy={result.strategy} "
-        f"| tokens={result.tokens_used}"
+    intent_str = result.intent.value if hasattr(result.intent, 'value') else str(result.intent)
+    strategy_str = result.strategy.value if hasattr(result.strategy, 'value') else str(result.strategy)
+
+    log_msg = (
+        f"Chat | session={safe_session_id} | "
+        f"query='{body.message.strip()}' | "
+        f"intent={intent_str} | "
+        f"strategy={strategy_str} | "
+        f"tokens={result.tokens_used} | "
+        f"latency={latency_ms}ms | "
+        f"fallback={result.is_fallback}"
     )
+
+    if result.is_fallback:
+        fallback_logger.warning(log_msg)
+    else:
+        logger.info(log_msg)
 
     return ChatResponse(
         success=True,
