@@ -1,12 +1,15 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
       - "6379:6379"
-    # --- ADDED HEALTHCHECK FOR REDIS ---
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -44,10 +47,14 @@ services:
       - chatbot_data:/app/data
     ports:
       - "${PORT:-8000}:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
     environment:
       - ENVIRONMENT=production
       - REDIS_URL=redis://redis:6379/0
-    # --- UPDATED TO WAIT FOR HEALTHY REDIS ---
     depends_on:
       redis:
         condition: service_healthy
