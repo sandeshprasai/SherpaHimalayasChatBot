@@ -112,8 +112,7 @@ class Pipeline:
         
         raw_output, tokens = await self.generator.generate(prompt)
         
-        # 7. Structural Normalization
-        # Converts LLM response into sections, suggestions, and answer text
+        
         normalized = self.response_normalizer.normalize(raw_output)
 
         if normalized.get("is_fallback", False):
@@ -124,9 +123,14 @@ class Pipeline:
             is_fb = False
             # Save history ONLY if not a fallback
             if session_id:
-                history.append({"role": "user", "content": user_query})
-                history.append({"role": "assistant", "content": final_answer})
-                await save_history(session_id, history)
+                is_duplicate = False
+                if len(history) >= 2 and history[-2].get("role") == "user":
+                    if history[-2].get("content") == user_query:
+                        is_duplicate = True
+                if not is_duplicate:
+                    history.append({"role": "user", "content": user_query})
+                    history.append({"role": "assistant", "content": final_answer})
+                    await save_history(session_id, history)
         
         return QueryResponse(
             answer=final_answer,

@@ -3,10 +3,16 @@ import redis.asyncio as redis
 from src.config.settings import settings
 from src.services.logger import logger
 
-redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+redis_client = redis.from_url(
+    settings.REDIS_URL,
+    decode_responses=True,
+    max_connections=20,           
+    socket_timeout=2.0,           
+    socket_connect_timeout=2.0,
+    retry_on_timeout=True,        
+)
 
 async def get_history(session_id: str) -> list:
-    
     if not session_id:
         return []
     try:
