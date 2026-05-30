@@ -1,4 +1,3 @@
-
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -14,17 +13,13 @@ from src.api.dependencies import initialize_pipeline, limiter
 from src.config.settings import settings
 from src.services.logger import logger
 
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    
     logger.info(f"Starting {settings.company_name} Chatbot API | env={settings.ENVIRONMENT}")
+
     await initialize_pipeline()        
     yield
     logger.info("Shutting down API server.")
-
-
 
 app = FastAPI(
     title=f"{settings.company_name} Chatbot API",
@@ -35,7 +30,6 @@ app = FastAPI(
         "powered by Groq Llama 3.3 70B."
     ),
     lifespan=lifespan,
-   
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
     redoc_url=None,
 )
@@ -57,7 +51,6 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-API-Key", "Authorization", "Cookie", "Set-Cookie"],
 )
 
-
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
@@ -66,7 +59,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         content={"detail": "An unexpected error occurred. Please try again."}
     )
 
-
 @app.get("/", tags=["Root"])
 async def root():
     return {
@@ -74,6 +66,9 @@ async def root():
         "version": "1.0.0",
         "status": "running"
     }
+
+app.include_router(health_router, prefix="/v1")
+app.include_router(chat_router, prefix="/v1")
 
 app.include_router(health_router)
 app.include_router(chat_router)
