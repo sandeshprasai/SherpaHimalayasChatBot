@@ -1,7 +1,7 @@
 import importlib
 import os
 from typing import List
-from pydantic import Field
+from pydantic import Field,field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # =============================================================================
@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0", env="HOST")
     PORT: int = Field(default=8000, env="PORT")
     API_KEY: str = Field(..., env="API_KEY")
+    
+    @field_validator("API_KEY")
+    @classmethod
+    def api_key_must_be_strong(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("API_KEY must be at least 32 characters long for security. Use `openssl rand -hex 32` to generate one.")
+        return v
 
     # =========================================================================
     # GROQ & MODELS (Two-Tier Architecture)

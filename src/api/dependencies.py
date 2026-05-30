@@ -1,4 +1,5 @@
 import time
+import asyncio
 from fastapi import Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -6,9 +7,21 @@ from slowapi.util import get_remote_address
 from src.core.pipeline import Pipeline
 from src.services.logger import logger
 
-limiter = Limiter(key_func=get_remote_address)
+def custom_rate_limit_key(request: Request) -> str:
+    session = request.cookies.get("session_id")
+    if session:
+        return f"session:{session}"
+    
+    api_key = request.headers.get("X-API-Key")
+    if api_key:
+        return f"apikey:{api_key}"
+        
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=custom_rate_limit_key)
 
 _pipeline_instance: Pipeline | None = None
+_pipeline_lock = asyncio.Lock() 
 
 def get_pipeline() -> Pipeline:
     global _pipeline_instance
@@ -21,20 +34,28 @@ def get_pipeline() -> Pipeline:
 
 async def initialize_pipeline() -> None:
     global _pipeline_instance
-    logger.info("Initializing AI Pipeline...")
-    start = time.time()
-    try:
-        _pipeline_instance = Pipeline(debug=False)
-        
-        logger.info("Warming up Vector Engine...")
-        if not _pipeline_instance._vec:
-            from src.retrieval.vector import VectorRetriever
-            _pipeline_instance._vec = VectorRetriever()
-        await _pipeline_instance._vec._ensure_ready()
-        
-        elapsed = round(time.time() - start, 2)
-        logger.info(f"Pipeline ready in {elapsed}s")
-    except Exception as e:
-        logger.error(f"CRITICAL: Pipeline failed to initialize: {e}")
-        _pipeline_instance = None
-        raise RuntimeError(f"AI Pipeline failed to start: {e}")
+    
+    if _pipeline_instance is not None:
+        return
+
+    async with _pipeline_lock:
+        if _pipeline_instance is not None:
+            return
+            
+        logger.info("Initializing AI Pipeline...")
+        start = time.time()
+        try:
+            _pipeline_instance = Pipeline(debug=False)
+            
+            logger.info("Warming up Vector Engine...")
+            if not _pipeline_instance._vec:
+                from src.retrieval.vector import VectorRetriever
+                _pipeline_instance._vec = VectorRetriever()
+            await _pipeline_instance._vec._ensure_ready()
+            
+            elapsed = round(time.time() - start, 2)
+            logger.info(f"Pipeline ready in {elapsed}s")
+        except Exception as e:
+            logger.error(f"CRITICAL: Pipeline failed to initialize: {e}")
+            _pipeline_instance = None
+            raise RuntimeError(f"AI Pipeline failed to start: {e}")
