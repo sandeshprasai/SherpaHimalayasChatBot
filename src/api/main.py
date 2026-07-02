@@ -25,13 +25,12 @@ app = FastAPI(
     title=f"{settings.company_name} Chatbot API",
     version="1.0.0",
     description=(
-        "Production AI backend for the Sherpa Himalaya chatbot. "
+        f"Production AI backend for {settings.company_name}. "
         "Hybrid RAG system with metadata and vector retrieval, "
-        "powered by Groq Llama 3.3 70B."
+        "powered by OpenAI GPT-4o."
     ),
     lifespan=lifespan,
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
-    redoc_url=None,
 )
 
 app.state.limiter = limiter

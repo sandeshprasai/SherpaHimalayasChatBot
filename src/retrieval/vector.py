@@ -4,7 +4,7 @@ import asyncio  # Added
 import chromadb
 from llama_index.core import VectorStoreIndex, StorageContext, Settings, Document
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 from src.config.settings import settings
 from src.core.schema import SourceNode
@@ -70,7 +70,7 @@ class VectorRetriever:
                 except Exception: continue
         return documents
 
-    # --- UPDATED TO BE ASYNC AND THREAD-SAFE ---
+
     async def _ensure_ready(self):
         if self._index: 
             return
@@ -81,7 +81,7 @@ class VectorRetriever:
             if self._index: 
                 return
                 
-            Settings.embed_model = HuggingFaceEmbedding(model_name=settings.embed_model)
+            Settings.embed_model = OpenAIEmbedding(model_name=settings.embed_model)
             # --- FIX: Changed chunk_overlap from 50 to 200 to prevent semantic context splitting ---
             Settings.node_parser = SentenceSplitter(chunk_size=1024, chunk_overlap=200)
             

@@ -1,40 +1,34 @@
 import json
 import os
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from src.services.logger import logger
-import tiktoken
 from src.core.schema import QueryRequest, DataExecutionPlan, QueryIntent
 from src.config.settings import settings
+import asyncio
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "../.."))
 load_dotenv(os.path.join(_ROOT, ".env"))
 
+_openai_client = None
 
-_groq_client = None
-
-def get_groq_client():
-    global _groq_client
-    if _groq_client is None:
-        api_key = os.getenv("GROQ_API_KEY")
+def get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("GROQ_API_KEY missing in .env")
-        _groq_client = AsyncGroq(api_key=api_key)
-    return _groq_client
+            raise ValueError("OPENAI_API_KEY missing in .env")
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    return _openai_client
 
 class UniversalClassifier:
     def __init__(self, available_keys: list[str]):
-        self.client = get_groq_client()
+        self.client = get_openai_client()
         self.available_keys = available_keys
 
     async def classify(self, req: QueryRequest, history: list = None) -> QueryRequest:
-        """
-        Logic-only classification. 
-        Matches user intent to discovered schema fields without domain knowledge.
-        """
         allowed_intents = [i.value for i in QueryIntent]
-        
         history_text = "No previous history."
         if history:
             history_text = "RECENT CHAT HISTORY:\n"
@@ -45,36 +39,29 @@ class UniversalClassifier:
         prompt = f"""
         ACT AS: A Logical Data Architect.
         SCHEMA_FIELDS: {self.available_keys}
-        
         {history_text}
-
         LATEST USER QUERY: "{req.text}"
 
         TASK: Generate a JSON Data Execution Plan.
         
         CRITICAL RULES:
-        1. CONTEXT RESOLUTION: If the LATEST QUERY uses pronouns (it, that, there) or refers to a previous subject, replace them in 'search_query' with the actual entity name from history.
-        2. DATA SORTING: If the user wants the "best/worst/most/least", pick the EXACT field from SCHEMA_FIELDS.
-        3. SEARCH QUERY: Expand the user input into a professional, standalone search string for a vector database.
+        1. CONTEXT RESOLUTION: Replace pronouns with exact entity names from history.
+        2. SEARCH QUERY: Expand the input into a professional search string.
 
         Return ONLY raw JSON:
         {{
-          "intent": "{'|'.join(allowed_intents)}",
-          "filters": {{ "field": "value" }},
-          "sort_field": "exact_field_from_schema" or null,
+          "intent": "string",
+          "filters": {{}},
+          "sort_field": "string" or null,
           "sort_direction": "asc"|"desc",
           "limit": 5,
           "needs_semantic_search": boolean,
-          "search_query": "Professional expansion of query with specific entities",
-          "reasoning": "How context was resolved"
+          "search_query": "string",
+          "reasoning": "string"
         }}
         """
         
-        # --- RETRY LOGIC WITH EXPONENTIAL BACKOFF ---
-        max_retries = 3
-        backoff_delay = 1.0
-        
-        for attempt in range(max_retries):
+        for attempt in range(3):
             try:
                 resp = await self.client.chat.completions.create(
                     model=settings.logic_model,
@@ -86,7 +73,6 @@ class UniversalClassifier:
                     temperature=0.0
                 )
                 d = json.loads(resp.choices[0].message.content)
-
                 req.plan = DataExecutionPlan(
                     filters=d.get("filters", {}),
                     sort_field=d.get("sort_field"),
@@ -97,23 +83,13 @@ class UniversalClassifier:
                     intent=QueryIntent(d.get("intent", "general")),
                     reasoning=d.get("reasoning", "")
                 )
-                break  # Success! Exit the retry loop
-
+                break
             except Exception as e:
-                if attempt < max_retries - 1:
-                    logger.warning(
-                        f"Groq Classification call failed (attempt {attempt + 1}/{max_retries}): {e}. "
-                        f"Retrying in {backoff_delay}s..."
-                    )
-                    import asyncio
-                    await asyncio.sleep(backoff_delay)
-                    backoff_delay *= 2.0
-                else:
-                    logger.error(f"Groq Classification call failed completely after {max_retries} attempts: {e}")
+                if attempt == 2:
                     req.plan = DataExecutionPlan(search_query=req.text, intent=QueryIntent.GENERAL)
+                await asyncio.sleep(1)
         
         return req
 
 async def classify(req: QueryRequest, keys: list[str], history: list = None) -> QueryRequest:
-    classifier = UniversalClassifier(keys)
-    return await classifier.classify(req, history)
+    return await UniversalClassifier(keys).classify(req, history)
