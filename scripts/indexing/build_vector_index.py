@@ -1,14 +1,16 @@
 import sys
 import traceback
-from src.retrieval.vector import VectorRetriever
+import asyncio
 
+async def async_run():
+    from src.retrieval.vector import VectorRetriever
+    v = VectorRetriever()
+    await v._ensure_ready()
+    print('Vector index loaded or built successfully.')
 
 def run():
     try:
-        from src.retrieval.vector import VectorRetriever
-        v = VectorRetriever()
-        v._ensure_ready()
-        print('Vector index loaded or built successfully.')
+        asyncio.run(async_run())
     except Exception as e:
         print('FAILED to build vector index:', e)
         traceback.print_exc()

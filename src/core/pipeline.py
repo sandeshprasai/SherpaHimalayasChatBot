@@ -82,6 +82,8 @@ class Pipeline:
     # ─────────────────────────────────────────────────────────────────────────
 
     async def run(self, user_query: str, session_id: str = None) -> QueryResponse:
+        import time
+        t_start = time.time()
         
         clean_query = self._sanitize_query(user_query)
         
@@ -102,6 +104,10 @@ class Pipeline:
         
         
         await self.classifier.classify(req, history=history)
+
+        # --- TIMER 1: CLASSIFICATION ---
+        t_class = time.time()
+        print(f"\n CLASSIFICATION TOOK: {round(t_class - t_start, 2)}s")
         
         if self.debug: 
             print(f" DEBUG: Original Query: {clean_query}")
@@ -141,6 +147,10 @@ class Pipeline:
             except Exception as e:
                 if self.debug: print(f"  [Pipeline Error] Vector search: {e}")
 
+        # --- TIMER 2: RETRIEVAL ---
+        t_ret = time.time()
+        print(f" RETRIEVAL TOOK: {round(t_ret - t_class, 2)}s")
+
         if not source_nodes:
             return QueryResponse(
                 answer=f"I'm sorry, I couldn't find any information matching that request in our system. Please contact {settings.company_email}.", 
@@ -154,6 +164,11 @@ class Pipeline:
         prompt = builder.build(req, source_nodes, history=history)
         
         raw_output, tokens = await self.generator.generate(prompt)
+
+        # --- TIMER 3: GENERATION ---
+        t_gen = time.time()
+        print(f" GENERATION TOOK: {round(t_gen - t_ret, 2)}s")
+        print(f" TOTAL PIPELINE TIME: {round(t_gen - t_start, 2)}s\n")
         
         
         normalized = self.response_normalizer.normalize(raw_output)

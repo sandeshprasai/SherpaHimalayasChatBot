@@ -47,10 +47,11 @@ class UniversalClassifier:
         CRITICAL RULES:
         1. CONTEXT RESOLUTION: Replace pronouns with exact entity names from history.
         2. SEARCH QUERY: Expand the input into a professional search string.
+        3. INTENT: "intent" MUST be exactly one of these values, verbatim, and nothing else: {allowed_intents}. Do not invent new intent strings.
 
         Return ONLY raw JSON:
         {{
-          "intent": "string",
+          "intent": "string (one of {allowed_intents})",
           "filters": {{}},
           "sort_field": "string" or null,
           "sort_direction": "asc"|"desc",
@@ -73,6 +74,17 @@ class UniversalClassifier:
                     temperature=0.0
                 )
                 d = json.loads(resp.choices[0].message.content)
+
+                raw_intent = d.get("intent", "general")
+                try:
+                    resolved_intent = QueryIntent(raw_intent)
+                except ValueError:
+                    logger.warning(
+                        f"Classifier returned invalid intent '{raw_intent}', "
+                        f"expected one of {allowed_intents}. Falling back to GENERAL."
+                    )
+                    resolved_intent = QueryIntent.GENERAL
+
                 req.plan = DataExecutionPlan(
                     filters=d.get("filters", {}),
                     sort_field=d.get("sort_field"),
@@ -80,14 +92,19 @@ class UniversalClassifier:
                     limit=d.get("limit", 5),
                     needs_semantic_search=d.get("needs_semantic_search", True),
                     search_query=d.get("search_query", req.text),
-                    intent=QueryIntent(d.get("intent", "general")),
+                    intent=resolved_intent,
                     reasoning=d.get("reasoning", "")
                 )
                 break
             except Exception as e:
+                logger.error(
+                    f"Classifier attempt {attempt + 1} failed | model={settings.logic_model} | "
+                    f"error_type={type(e).__name__} | error={e}"
+                )
                 if attempt == 2:
                     req.plan = DataExecutionPlan(search_query=req.text, intent=QueryIntent.GENERAL)
-                await asyncio.sleep(1)
+                else:
+                    await asyncio.sleep(1)
         
         return req
 
