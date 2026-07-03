@@ -43,8 +43,6 @@ services:
       dockerfile: Dockerfile
     image: chatbot:latest
     env_file: .env
-    links:
-      - redis  
     volumes:
       - chatbot_data:/app/data
     ports:
