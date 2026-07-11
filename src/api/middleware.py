@@ -10,7 +10,7 @@ from src.services.logger import logger
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     
-    PROTECTED_PREFIXES = ("/chat", "/v1/chat")
+    PROTECTED_PREFIXES = ("/chat", "/v1/chat", "/session", "/v1/session")
     
     WHITELIST_EXACT = {"/", "/health", "/health/", "/v1/health", "/v1/health/"}
     WHITELIST_PREFIX = ("/docs", "/openapi.json")

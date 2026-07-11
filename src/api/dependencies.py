@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from src.config.settings import settings
 from src.core.pipeline import Pipeline
 from src.services.logger import logger
 
@@ -18,7 +19,7 @@ def custom_rate_limit_key(request: Request) -> str:
         
     return get_remote_address(request)
 
-limiter = Limiter(key_func=custom_rate_limit_key)
+limiter = Limiter(key_func=custom_rate_limit_key, storage_uri=settings.REDIS_URL)
 
 _pipeline_instance: Pipeline | None = None
 _pipeline_lock = asyncio.Lock() 
