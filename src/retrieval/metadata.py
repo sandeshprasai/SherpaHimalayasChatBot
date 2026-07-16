@@ -23,7 +23,51 @@ class MetadataRetriever:
         results = self._records
         if plan.filters:
             for k, v in plan.filters.items():
-                if v and k in self.schema_keys:
+                if k not in self.schema_keys:
+                    continue
+
+                # Structured operator filter: {"operator": ">", "value": 7000}
+                if isinstance(v, dict) and "value" in v:
+                    op = str(v.get("operator", "==")).strip()
+                    target = v.get("value")
+                    target_num = None
+                    if isinstance(target, (int, float)):
+                        target_num = target
+                    elif isinstance(target, str):
+                        cleaned = target.replace(",", "").strip()
+                        try:
+                            target_num = float(cleaned)
+                        except ValueError:
+                            target_num = None
+
+                    def matches(r, op=op, target=target, target_num=target_num, k=k):
+                        field_val = r.get(k)
+                        if field_val is None:
+                            return False
+                        field_num = None
+                        if isinstance(field_val, (int, float)):
+                            field_num = field_val
+                        elif isinstance(field_val, str):
+                            cleaned = field_val.replace(",", "").strip()
+                            try:
+                                field_num = float(cleaned)
+                            except ValueError:
+                                field_num = None
+
+                        if target_num is not None and field_num is not None:
+                            if op in (">", "gt"): return field_num > target_num
+                            if op in (">=", "gte"): return field_num >= target_num
+                            if op in ("<", "lt"): return field_num < target_num
+                            if op in ("<=", "lte"): return field_num <= target_num
+                            if op in ("==", "=", "eq"): return field_num == target_num
+                            if op in ("!=", "ne"): return field_num != target_num
+                        # Fallback: string containment for non-numeric fields
+                        return str(target).lower() in str(field_val).lower()
+
+                    results = [r for r in results if matches(r)]
+
+                # Plain value filter: substring match (original behavior)
+                elif v:
                     results = [r for r in results if str(v).lower() in str(r.get(k, "")).lower()]
 
         if plan.sort_field and plan.sort_field in self.schema_keys:

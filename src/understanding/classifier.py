@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from src.services.logger import logger
@@ -47,11 +48,18 @@ class UniversalClassifier:
         CRITICAL RULES:
         1. CONTEXT RESOLUTION: Replace pronouns with exact entity names from history.
         2. SEARCH QUERY: Expand the input into a professional search string.
-        3. INTENT: "intent" MUST be exactly one of these values, verbatim, and nothing else: {allowed_intents}. Do not invent new intent strings.
+        3. INTENT: Must be exactly one of these values, no others: {allowed_intents}
+        4. LIMIT: Default to 5. If the user asks for "all", "every", "complete list",
+           "how many", or otherwise implies they want an exhaustive answer rather than
+           a few examples, set limit to 50 instead.
+        5. NUMERIC FILTERS: For threshold conditions (e.g. "over 7000m", "under $2000",
+           "at least 10 days"), use this structured shape for the filter value:
+           {{"operator": ">"|">="|"<"|"<="|"=="|"!=", "value": <number>}}
+           Only use a plain string/number value for exact/substring matches.
 
         Return ONLY raw JSON:
         {{
-          "intent": "string (one of {allowed_intents})",
+          "intent": "string",
           "filters": {{}},
           "sort_field": "string" or null,
           "sort_direction": "asc"|"desc",
@@ -63,6 +71,7 @@ class UniversalClassifier:
         """
         
         for attempt in range(3):
+            attempt_start = time.monotonic()
             try:
                 resp = await self.client.chat.completions.create(
                     model=settings.logic_model,
@@ -71,20 +80,10 @@ class UniversalClassifier:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.0
+                    temperature=0.0,
+                    timeout=8.0,
                 )
                 d = json.loads(resp.choices[0].message.content)
-
-                raw_intent = d.get("intent", "general")
-                try:
-                    resolved_intent = QueryIntent(raw_intent)
-                except ValueError:
-                    logger.warning(
-                        f"Classifier returned invalid intent '{raw_intent}', "
-                        f"expected one of {allowed_intents}. Falling back to GENERAL."
-                    )
-                    resolved_intent = QueryIntent.GENERAL
-
                 req.plan = DataExecutionPlan(
                     filters=d.get("filters", {}),
                     sort_field=d.get("sort_field"),
@@ -92,15 +91,14 @@ class UniversalClassifier:
                     limit=d.get("limit", 5),
                     needs_semantic_search=d.get("needs_semantic_search", True),
                     search_query=d.get("search_query", req.text),
-                    intent=resolved_intent,
+                    intent=QueryIntent(d.get("intent", "general")),
                     reasoning=d.get("reasoning", "")
                 )
+                logger.info(f"Classifier attempt {attempt+1} succeeded in {time.monotonic()-attempt_start:.2f}s")
                 break
             except Exception as e:
-                logger.error(
-                    f"Classifier attempt {attempt + 1} failed | model={settings.logic_model} | "
-                    f"error_type={type(e).__name__} | error={e}"
-                )
+                elapsed = time.monotonic() - attempt_start
+                logger.error(f"Classifier attempt {attempt+1} failed after {elapsed:.2f}s | model={settings.logic_model} | error_type={type(e).__name__} | error={e}")
                 if attempt == 2:
                     req.plan = DataExecutionPlan(search_query=req.text, intent=QueryIntent.GENERAL)
                 else:

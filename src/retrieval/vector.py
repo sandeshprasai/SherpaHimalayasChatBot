@@ -20,8 +20,12 @@ class VectorRetriever:
         await self._ensure_ready()
         
         k = top_k or settings.similarity_top_k
-        fetch_k = k * 3 if prefer_types else k
-        
+        # Fetch a much wider candidate pool than we need so that after
+        # deduplicating to one chunk per source document, we still have
+        # k *distinct documents* left -- not just k chunks that might all
+        # belong to the same 1-2 highly-matching documents.
+        fetch_k = max(k * 3, k + 15) if prefer_types else max(k * 6, 30)
+
         # Fresh retriever per-call to ensure correct top_k
         retriever = self._index.as_retriever(similarity_top_k=fetch_k)
         raw_nodes = await retriever.aretrieve(query)
@@ -32,6 +36,18 @@ class VectorRetriever:
             others = [n for n in raw_nodes if n.node.metadata.get("type", "").lower() not in prefer_types]
             raw_nodes = (preferred + others)
 
+        # Deduplicate: keep only the best-scoring chunk per source document,
+        # preserving rank order, so a document with many matching chunks
+        # doesn't crowd out other relevant documents.
+        seen_sources = set()
+        deduped_nodes = []
+        for n in raw_nodes:
+            source_id = n.node.metadata.get("source_id")
+            if source_id in seen_sources:
+                continue
+            seen_sources.add(source_id)
+            deduped_nodes.append(n)
+
         return [
             SourceNode(
                 text=n.node.get_content(),
@@ -39,7 +55,7 @@ class VectorRetriever:
                 source_id=n.node.metadata.get("source_id"),
                 title=n.node.metadata.get("title") or "Unknown Record"
             )
-            for n in raw_nodes[:k]
+            for n in deduped_nodes[:k]
         ]
 
     def _load_documents(self):
