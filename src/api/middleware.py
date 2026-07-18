@@ -10,7 +10,7 @@ from src.services.logger import logger
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     
-    PROTECTED_PREFIXES = ("/chat", "/v1/chat", "/session", "/v1/session")
+    PROTECTED_PREFIXES = ("/chat", "/v1/chat")
     
     WHITELIST_EXACT = {"/", "/health", "/health/", "/v1/health", "/v1/health/"}
     WHITELIST_PREFIX = ("/docs", "/openapi.json")
@@ -32,7 +32,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
         api_key = request.headers.get("X-API-Key", "")
         if not hmac.compare_digest(api_key, settings.API_KEY):
-            logger.warning(f"Unauthorized request to {path} from {request.client.host if request.client else 'unknown'}")
+            logger.warning("unauthorized_request", extra={
+                "path": path,
+                "ip": request.client.host if request.client else "unknown",
+            })
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid or missing API key. Provide it in the X-API-Key header."}
@@ -46,9 +49,11 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         start = time.time()
         response = await call_next(request)
         latency_ms = round((time.time() - start) * 1000)
-        logger.info(
-            f"{request.method} {request.url.path} "
-            f"| status={response.status_code} | {latency_ms}ms "
-            f"| ip={request.client.host if request.client else 'unknown'}"
-        )
+        logger.info("http_request", extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "latency_ms": latency_ms,
+            "ip": request.client.host if request.client else "unknown",
+        })
         return response

@@ -9,18 +9,20 @@ from slowapi.errors import RateLimitExceeded
 from src.api.middleware import APIKeyMiddleware, RequestLogMiddleware
 from src.api.routes.chat import router as chat_router
 from src.api.routes.health import router as health_router
-from src.api.routes.session import router as session_router
 from src.api.dependencies import initialize_pipeline, limiter
 from src.config.settings import settings
 from src.services.logger import logger
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Starting {settings.company_name} Chatbot API | env={settings.ENVIRONMENT}")
+    logger.info("api_startup", extra={
+        "company": settings.company_name,
+        "environment": settings.ENVIRONMENT,
+    })
 
     await initialize_pipeline()        
     yield
-    logger.info("Shutting down API server.")
+    logger.info("api_shutdown")
 
 app = FastAPI(
     title=f"{settings.company_name} Chatbot API",
@@ -39,13 +41,6 @@ app.add_exception_handler(
     RateLimitExceeded,
     _rate_limit_exceeded_handler       
 )
-if "*" in settings.cors_origins:
-    raise RuntimeError(
-        "ALLOWED_ORIGINS is set to '*' (wildcard), which is incompatible with "
-        "the cookie-based sessions this API requires. Set ALLOWED_ORIGINS to "
-        "a comma-separated list of exact origins, e.g. "
-        "'https://yourdomain.com,https://www.yourdomain.com'."
-    )
 
 app.add_middleware(RequestLogMiddleware)   
 app.add_middleware(APIKeyMiddleware)       
@@ -60,7 +55,10 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    logger.error("unhandled_exception", extra={
+        "path": request.url.path,
+        "method": request.method,
+    }, exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "An unexpected error occurred. Please try again."}
@@ -76,4 +74,6 @@ async def root():
 
 app.include_router(health_router, prefix="/v1")
 app.include_router(chat_router, prefix="/v1")
-app.include_router(session_router, prefix="/v1")
+
+app.include_router(health_router)
+app.include_router(chat_router)

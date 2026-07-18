@@ -45,18 +45,17 @@ async def chat(
     try:
         result = await pipeline.run(body.message, session_id=safe_session_id)
     except Exception as e:
-        logger.error(f"Pipeline error for query='{body.message[:80]}': {e}", exc_info=True)
+        logger.error("pipeline_error", extra={
+            "session_id": safe_session_id,
+            "query": body.message[:80],
+            "error": str(e),
+        }, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal error occurred while processing your request."
         )
 
     latency_ms = round((time.time() - start) * 1000)
-
-    if result.is_fallback:
-        fallback_logger.warning(
-            f"FALLBACK | query='{body.message}' | latency={latency_ms}ms"
-        )
 
     sources = []
     if result.sources:
@@ -69,20 +68,22 @@ async def chat(
     intent_str = result.intent.value if hasattr(result.intent, 'value') else str(result.intent)
     strategy_str = result.strategy.value if hasattr(result.strategy, 'value') else str(result.strategy)
 
-    log_msg = (
-        f"Chat | session={safe_session_id} | "
-        f"query='{body.message.strip()}' | "
-        f"intent={intent_str} | "
-        f"strategy={strategy_str} | "
-        f"tokens={result.tokens_used} | "
-        f"latency={latency_ms}ms | "
-        f"fallback={result.is_fallback}"
-    )
+    log_fields = {
+        "session_id": safe_session_id,
+        "query": body.message.strip(),
+        "intent": intent_str,
+        "strategy": strategy_str,
+        "tokens": result.tokens_used,
+        "latency_ms": latency_ms,
+        "fallback": result.is_fallback,
+        "source_count": len(sources),
+    }
 
+    # Log exactly once per request, to whichever logger fits.
     if result.is_fallback:
-        fallback_logger.warning(log_msg)
+        fallback_logger.warning("chat_completed", extra=log_fields)
     else:
-        logger.info(log_msg)
+        logger.info("chat_completed", extra=log_fields)
 
     return ChatResponse(
         success=True,

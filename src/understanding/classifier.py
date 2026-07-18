@@ -69,7 +69,12 @@ class UniversalClassifier:
           "reasoning": "string"
         }}
         """
-        
+
+        logger.info("classification_started", extra={
+            "query": req.text[:200],
+            "history_turns": len(history) if history else 0,
+        })
+
         for attempt in range(3):
             attempt_start = time.monotonic()
             try:
@@ -94,16 +99,38 @@ class UniversalClassifier:
                     intent=QueryIntent(d.get("intent", "general")),
                     reasoning=d.get("reasoning", "")
                 )
-                logger.info(f"Classifier attempt {attempt+1} succeeded in {time.monotonic()-attempt_start:.2f}s")
+                usage = getattr(resp, "usage", None)
+                logger.info("classification_succeeded", extra={
+                    "attempt": attempt + 1,
+                    "duration_s": round(time.monotonic() - attempt_start, 2),
+                    "model": settings.logic_model,
+                    "intent": req.plan.intent.value,
+                    "filters": req.plan.filters,
+                    "sort_field": req.plan.sort_field,
+                    "limit": req.plan.limit,
+                    "needs_semantic_search": req.plan.needs_semantic_search,
+                    "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                    "completion_tokens": getattr(usage, "completion_tokens", None),
+                    "total_tokens": getattr(usage, "total_tokens", None),
+                })
                 break
             except Exception as e:
                 elapsed = time.monotonic() - attempt_start
-                logger.error(f"Classifier attempt {attempt+1} failed after {elapsed:.2f}s | model={settings.logic_model} | error_type={type(e).__name__} | error={e}")
+                logger.error("classification_attempt_failed", extra={
+                    "attempt": attempt + 1,
+                    "duration_s": round(elapsed, 2),
+                    "model": settings.logic_model,
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                })
                 if attempt == 2:
                     req.plan = DataExecutionPlan(search_query=req.text, intent=QueryIntent.GENERAL)
+                    logger.warning("classification_exhausted_retries", extra={
+                        "query": req.text[:200],
+                    })
                 else:
                     await asyncio.sleep(1)
-        
+
         return req
 
 async def classify(req: QueryRequest, keys: list[str], history: list = None) -> QueryRequest:
