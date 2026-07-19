@@ -213,7 +213,7 @@ Expected response:
 
 If you see `"status": "degraded"`, wait longer, then check logs:
 ```bash
-docker compose logs chatbot
+docker compose logs --tail=0 --no-log-prefix chatbot -f | jq -R 'fromjson? // .'
 ```
 
 ---
@@ -590,7 +590,7 @@ After changing `ALLOWED_ORIGINS`, restart: `docker compose restart chatbot`.
 
 **Chatbot won't start**
 ```bash
-docker compose logs chatbot
+docker compose logs --tail=0 --no-log-prefix chatbot -f | jq -R 'fromjson? // .'
 ```
 Common cause: a missing or invalid `.env` value (especially `OPENAI_API_KEY`,
 `API_KEY` under 32 characters, or `ALLOWED_ORIGINS=*`). The error message
