@@ -129,7 +129,7 @@ nano .env
 | `CHROMA_COLLECTION` | No | Internal name for your vector database collection. Any short name, no spaces (e.g. `mycompany_rag_collection`). |
 | `COMPANY_EMAIL` | Yes | Shown to users when the bot can't answer something ("please contact us at..."). |
 | `COMPANY_NAME` | Yes | Used in the bot's own self-description and API title. |
-| `SYSTEM_NAME` | Yes | The bot's name, e.g. `"Sherpa Assistant"`. |
+| `SYSTEM_NAME` | Yes | The bot's name, e.g. `"Travel Assistant"`. |
 | `GREETING` | No | A greeting word/phrase the bot may use, e.g. `"Hello"` or `"Namaste"`. |
 | `REDIS_URL` | No | Leave as `redis://redis:6379/0` in Docker Compose (the service name `redis` resolves automatically inside the Docker network). |
 | `ALLOWED_ORIGINS` | **Yes** | Comma-separated list of the exact website domain(s) allowed to call this API, e.g. `https://yourcompany.com,https://www.yourcompany.com`. **Never set this to `*`** — the app will refuse to start if you do (see [Section 10](#10-going-live-domain-https-and-cors) for why). |

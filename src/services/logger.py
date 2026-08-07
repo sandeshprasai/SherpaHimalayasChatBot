@@ -89,5 +89,5 @@ def _build_logger(name: str, level: int, filename: str, max_bytes: int, backups:
     return log
 
 
-logger = _build_logger("sherpa-chatbot", logging.INFO, "app.log", 10 * 1024 * 1024, 5)
-fallback_logger = _build_logger("sherpa-fallback", logging.WARNING, "fallback.log", 5 * 1024 * 1024, 3)
+logger = _build_logger("Chatbot", logging.INFO, "app.log", 10 * 1024 * 1024, 5)
+fallback_logger = _build_logger("Fallback", logging.WARNING, "fallback.log", 5 * 1024 * 1024, 3)

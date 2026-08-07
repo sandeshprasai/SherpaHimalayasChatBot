@@ -14,7 +14,7 @@ router = APIRouter(
 @router.post(
     "/",
     response_model=ChatResponse,
-    summary="Send a message to the Sherpa Chatbot"
+    summary="Send a message to the Chatbot"
 )
 @limiter.limit("20/minute")   
 async def chat(      

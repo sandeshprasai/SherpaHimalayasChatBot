@@ -9,6 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from src.api.middleware import APIKeyMiddleware, RequestLogMiddleware
 from src.api.routes.chat import router as chat_router
 from src.api.routes.health import router as health_router
+from src.api.routes.session import router as session_router 
 from src.api.dependencies import initialize_pipeline, limiter
 from src.config.settings import settings
 from src.services.logger import logger
@@ -74,6 +75,9 @@ async def root():
 
 app.include_router(health_router, prefix="/v1")
 app.include_router(chat_router, prefix="/v1")
+app.include_router(session_router, prefix="/v1")
+
 
 app.include_router(health_router)
 app.include_router(chat_router)
+app.include_router(session_router)
